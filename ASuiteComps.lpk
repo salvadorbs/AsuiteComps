@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CONFIG>
+  <Package Version="4">
+    <PathDelim Value="\"/>
+    <Name Value="ASuiteComps"/>
+    <Type Value="RunAndDesignTime"/>
+    <CompilerOptions>
+      <Version Value="11"/>
+      <PathDelim Value="\"/>
+      <SearchPaths>
+        <OtherUnitFiles Value="visual"/>
+        <UnitOutputDirectory Value="lib\$(TargetCPU)-$(TargetOS)"/>
+      </SearchPaths>
+    </CompilerOptions>
+    <Version Major="1"/>
+    <Files Count="3">
+      <Item1>
+        <Filename Value="visual\BCImageTab.pas"/>
+        <HasRegisterProc Value="True"/>
+        <UnitName Value="BCImageTab"/>
+      </Item1>
+      <Item2>
+        <Filename Value="visual\buttonededit.pas"/>
+        <HasRegisterProc Value="True"/>
+        <UnitName Value="ButtonedEdit"/>
+      </Item2>
+      <Item3>
+        <Filename Value="visual\HotKey.pas"/>
+        <HasRegisterProc Value="True"/>
+        <UnitName Value="HotKey"/>
+      </Item3>
+    </Files>
+    <RequiredPkgs Count="2">
+      <Item1>
+        <PackageName Value="bgracontrols"/>
+      </Item1>
+      <Item2>
+        <PackageName Value="BGRABitmapPack"/>
+      </Item2>
+    </RequiredPkgs>
+    <UsageOptions>
+      <UnitPath Value="$(PkgOutDir)"/>
+    </UsageOptions>
+    <PublishOptions>
+      <Version Value="2"/>
+      <UseFileFilters Value="True"/>
+    </PublishOptions>
+  </Package>
+</CONFIG>
