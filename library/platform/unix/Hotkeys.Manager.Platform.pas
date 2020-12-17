@@ -29,14 +29,15 @@ unit Hotkeys.Manager.Platform;
 interface
 
 uses
-  X, XLib, KeySym, Hotkeys.Manager, Hotkeys.ShortcutEx, LCLType, Menus
+  X, XLib, KeySym, Hotkeys.Manager, Hotkeys.ShortcutEx, LCLType, Menus, LCLProc,
+  Classes
 
   {$IFDEF GTK}
   , Gdk2, Gdk2x, Gtk2Proc
   {$ENDIF}
 
   {$IFDEF QT}
-  , qt5, QGHotkeyHookPas, LCLProc, Classes
+  , qt5, QGHotkeyHookPas
   {$ENDIF};
 
 type
@@ -49,8 +50,6 @@ type
 
     {$IFDEF GTK}
     FRoot: PGdkWindow;
-
-    function FilterKeys(AnyEvent: PXAnyEvent; Event: PGdkEvent; Data: Pointer): TGdkFilterReturn; cdecl;
     {$ENDIF}
 
     {$IFDEF QT}
@@ -71,6 +70,10 @@ type
 
     function IsHotkeyAvailable(Shortcut: TShortCut): Boolean; override;
   end;
+
+{$IFDEF GTK}
+function FilterKeys(AnyEvent: PXAnyEvent; Event: PGdkEvent; Data: Pointer): TGdkFilterReturn; cdecl;
+{$ENDIF}
 
 {
   X Key Modifiers:
@@ -331,16 +334,17 @@ begin
 end;
 
 {$IFDEF GTK}
-function TUnixHotkeyManager.FilterKeys(AnyEvent: PXAnyEvent; Event: PGdkEvent; Data: Pointer): TGdkFilterReturn; cdecl;
+function FilterKeys(AnyEvent: PXAnyEvent; Event: PGdkEvent; Data: Pointer): TGdkFilterReturn; cdecl;
 {$ENDIF}
 {$IFDEF QT}
 function TUnixHotkeyManager.FilterKeys(handle: QGHotkey_hookH; KeyCode: Cardinal; KeyState: Cardinal): boolean; cdecl;
 {$ENDIF}
 var
   {$IFDEF GTK}
+  Self: TUnixHotkeyManager absolute Data;
   KeyEvent: PXKeyEvent absolute AnyEvent;
-  KeyCode: cuint;
-  KeyState: cuint;
+  KeyCode: Cardinal;
+  KeyState: Cardinal;
   {$ENDIF}
 
   Sym: TKeySym;
@@ -358,7 +362,7 @@ begin
   {$ENDIF}
 
   Sym := XKeycodeToKeysym(Self.FDisplay, KeyCode, 0);
-  I := Self.FindHotkey(SymToKey(Sym), ModToShift(KeyState));
+  I := Self.FindHotkey(Self.SymToKey(Sym), Self.ModToShift(KeyState));
 
   if I > -1 then
   begin
@@ -513,7 +517,6 @@ begin
   {$IFDEF GTK}
   FRoot := gdk_get_default_root_window;
   FDisplay := GDK_WINDOW_XDISPLAY(FRoot);
-  FQGHotkey := QGHotkey_hook_Create(QCoreApplication_instance());
   {$ENDIF}
 
   {$IFDEF QT}
