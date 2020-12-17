@@ -24,19 +24,19 @@ With some original code by Codebot (Cross Pascal Library) - https://github.com/s
 
 unit Hotkeys.Manager.Platform;
 
-{$MODE DelphiUnicode}
+{$I ASuiteComps.inc}
 
 interface
 
 uses
-  X, XLib, KeySym, Hotkeys.Manager
+  X, XLib, KeySym, Hotkeys.Manager, Hotkeys.ShortcutEx, LCLType, Menus
 
   {$IFDEF GTK}
   , Gdk2, Gdk2x, Gtk2Proc
   {$ENDIF}
 
   {$IFDEF QT}
-  , qt5, QGHotkeyHookPas, LCLProc
+  , qt5, QGHotkeyHookPas, LCLProc, Classes
   {$ENDIF};
 
 type
@@ -57,7 +57,7 @@ type
     FQGHotkey: QGHotkey_hookH;
 
     function FilterKeys(handle: QGHotkey_hookH; KeyCode: Cardinal; KeyState: Cardinal): boolean; cdecl;
-    {$ENDIF};
+    {$ENDIF}
 
     function ShiftToMod(ShiftState: TShiftState): Integer;
     function KeyToSym(Key: Word): TKeySym;
@@ -357,8 +357,8 @@ begin
   KeyState := KeyEvent.state;
   {$ENDIF}
 
-  Sym := XKeycodeToKeysym(Self.FDisplay, KeyEvent.keycode, 0);
-  I := Self.FindHotkey(SymToKey(Sym), ModToShift(KeyEvent.state));
+  Sym := XKeycodeToKeysym(Self.FDisplay, KeyCode, 0);
+  I := Self.FindHotkey(SymToKey(Sym), ModToShift(KeyState));
 
   if I > -1 then
   begin
@@ -442,7 +442,7 @@ begin
       {$ENDIF}
 
       {$IFDEF QT}
-      QGHotkey_hook_hook_events(FQGHotkey, testmethod);
+      QGHotkey_hook_hook_installfilter(FQGHotkey, FilterKeys);
       {$ENDIF}
     end;
   end;
@@ -526,14 +526,6 @@ function TUnixHotkeyManager.IsHotkeyAvailable(Shortcut: TShortCut): Boolean;
 begin
   //TODO: Sob :(
   Result := True;
-end;
-
-function HotkeyManager: TBaseHotkeyManager;
-begin
-  if InternalManager = nil then
-    InternalManager := THotkeyCaptureImpl.Create;
-
-  Result := TBaseHotkeyManager(InternalManager);
 end;
 
 end.

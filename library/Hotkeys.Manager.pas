@@ -24,7 +24,7 @@ With some original code by Codebot (Cross Pascal Library) - https://github.com/s
 
 unit Hotkeys.Manager;
 
-{$MODE DelphiUnicode}
+{$I ASuiteComps.inc}
 
 interface
 
@@ -84,7 +84,7 @@ type
   {$IFDEF MSWINDOWS}
   THotkeyCaptureImpl = TWin32HotkeyManager;
   {$ELSE}
-  THotkeyCaptureImpl = TLinuxHotkeyManager;
+  THotkeyCaptureImpl = TUnixHotkeyManager;
   {$ENDIF}
 
 constructor TBaseHotkeyManager.Create;
