@@ -8,12 +8,12 @@
       <Version Value="11"/>
       <PathDelim Value="\"/>
       <SearchPaths>
-        <OtherUnitFiles Value="visual"/>
+        <OtherUnitFiles Value="visual;library\platform\$(SrcOS);library"/>
         <UnitOutputDirectory Value="lib\$(TargetCPU)-$(TargetOS)"/>
       </SearchPaths>
     </CompilerOptions>
     <Version Major="1"/>
-    <Files Count="3">
+    <Files Count="5">
       <Item1>
         <Filename Value="visual\BCImageTab.pas"/>
         <HasRegisterProc Value="True"/>
@@ -29,6 +29,15 @@
         <HasRegisterProc Value="True"/>
         <UnitName Value="HotKey"/>
       </Item3>
+      <Item4>
+        <Filename Value="library\Hotkeys.ShortcutEx.pas"/>
+        <AddToUsesPkgSection Value="False"/>
+        <UnitName Value="Hotkeys.ShortcutEx"/>
+      </Item4>
+      <Item5>
+        <Filename Value="library\Hotkeys.Manager.pas"/>
+        <UnitName Value="Hotkeys.Manager"/>
+      </Item5>
     </Files>
     <RequiredPkgs Count="2">
       <Item1>

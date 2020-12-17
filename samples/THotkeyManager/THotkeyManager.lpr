@@ -1,4 +1,4 @@
-program TButtonedEdit;
+program THotkeyManager;
 
 {$mode objfpc}{$H+}
 

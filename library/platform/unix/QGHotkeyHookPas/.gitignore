@@ -1,0 +1,6 @@
+BUILD/
+Makefile
+tmp/
+*.deb
+*.rpm
+lib*

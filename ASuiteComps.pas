@@ -8,7 +8,7 @@ unit ASuiteComps;
 interface
 
 uses
-  BCImageTab, ButtonedEdit, HotKey, LazarusPackageIntf;
+  BCImageTab, ButtonedEdit, HotKey, Hotkeys.Manager, LazarusPackageIntf;
 
 implementation
 
