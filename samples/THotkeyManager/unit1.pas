@@ -6,7 +6,7 @@ interface
 
 uses
   Classes, SysUtils, Forms, Controls, Graphics, Dialogs, StdCtrls,
-  Hotkeys.Manager, HotKey, Hotkeys.ShortcutEx;
+  Hotkeys.Manager.Platform, HotKey, Hotkeys.ShortcutEx;
 
 type
 

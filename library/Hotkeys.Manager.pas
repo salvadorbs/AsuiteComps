@@ -69,23 +69,10 @@ type
 { Used by THotkeyList }
 function HotkeyCompare(constref A, B: TShortcutEx): Integer;
 
-{ Returns the global hotkey manager instance }
-function HotkeyManager: TBaseHotkeyManager;
-
 var
   InternalManager: TBaseHotkeyManager;
 
 implementation
-
-uses
-  Hotkeys.Manager.Platform;
-
-type
-  {$IFDEF MSWINDOWS}
-  THotkeyCaptureImpl = TWin32HotkeyManager;
-  {$ELSE}
-  THotkeyCaptureImpl = TUnixHotkeyManager;
-  {$ENDIF}
 
 constructor TBaseHotkeyManager.Create;
 begin
@@ -118,14 +105,6 @@ begin
   if Result <> 0 then
     Exit;
   Result := LongInt(A.ShiftState) - LongInt(B.ShiftState);
-end;
-
-function HotkeyManager: TBaseHotkeyManager;
-begin
-  if InternalManager = nil then
-    InternalManager := THotkeyCaptureImpl.Create;
-
-  Result := TBaseHotkeyManager(InternalManager);
 end;
 
 function TBaseHotkeyManager.FindHotkey(Key: Word; ShiftState: TShiftState): Integer;

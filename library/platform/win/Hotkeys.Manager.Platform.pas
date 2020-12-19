@@ -53,6 +53,9 @@ type
     function IsHotkeyAvailable(Shortcut: TShortCut): Boolean; override;
   end;
 
+{ Returns the global hotkey manager instance }
+function HotkeyManager: TBaseHotkeyManager; override;
+
 var
   HWindow: HWND;
 
@@ -61,6 +64,14 @@ const
   HotKeyAtomPrefix: string = 'TWin32Hotkey';
 
 implementation
+
+function HotkeyManager: TBaseHotkeyManager;
+begin
+  if InternalManager = nil then
+    InternalManager := TWin32HotkeyManager.Create;
+
+  Result := TBaseHotkeyManager(InternalManager);
+end;
 
 function WinProc(hw: HWND; uMsg: UINT; wp: WPARAM; lp: LPARAM): LRESULT;
   stdcall; export;

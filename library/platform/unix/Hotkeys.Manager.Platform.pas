@@ -75,6 +75,9 @@ type
 function FilterKeys(AnyEvent: PXAnyEvent; Event: PGdkEvent; Data: Pointer): TGdkFilterReturn; cdecl;
 {$ENDIF}
 
+{ Returns the global hotkey manager instance }
+function HotkeyManager: TBaseHotkeyManager; override;
+
 {
   X Key Modifiers:
 
@@ -98,6 +101,14 @@ const
   NotLock = Integer(not (CapLock or NumLock));
 
 implementation
+
+function TUnixHotkeyManager.HotkeyManager: TBaseHotkeyManager;
+begin
+  if InternalManager = nil then
+    InternalManager := TWin32HotkeyManager.Create;
+
+  Result := TBaseHotkeyManager(InternalManager);
+end;
 
 function TUnixHotkeyManager.ShiftToMod(ShiftState: TShiftState): Integer;
 begin
