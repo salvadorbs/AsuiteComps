@@ -54,7 +54,7 @@ type
   end;
 
 { Returns the global hotkey manager instance }
-function HotkeyManager: TBaseHotkeyManager; override;
+function HotkeyManager: TBaseHotkeyManager;
 
 var
   HWindow: HWND;

@@ -76,7 +76,7 @@ function FilterKeys(AnyEvent: PXAnyEvent; Event: PGdkEvent; Data: Pointer): TGdk
 {$ENDIF}
 
 { Returns the global hotkey manager instance }
-function HotkeyManager: TBaseHotkeyManager; override;
+function HotkeyManager: TBaseHotkeyManager;
 
 {
   X Key Modifiers:
@@ -102,10 +102,10 @@ const
 
 implementation
 
-function TUnixHotkeyManager.HotkeyManager: TBaseHotkeyManager;
+function HotkeyManager: TBaseHotkeyManager;
 begin
   if InternalManager = nil then
-    InternalManager := TWin32HotkeyManager.Create;
+    InternalManager := TUnixHotkeyManager.Create;
 
   Result := TBaseHotkeyManager(InternalManager);
 end;
