@@ -53,16 +53,19 @@ type
     function GetDropDownMenu: TPopupMenu;
     function GetImageIndex: TImageIndex;
     function GetImages: TCustomImageList;
+    function GetImagesWidth: Integer;
     function GetOnClick: TNotifyEvent;
     function GetVisible: Boolean;
     procedure SetDropDownMenu(AValue: TPopupMenu);
     procedure SetImageIndex(AValue: TImageIndex);
     procedure SetImages(AValue: TCustomImageList);
+    procedure SetImagesWidth(AValue: Integer);
     procedure SetOnClick(AValue: TNotifyEvent);
     procedure SetVisibile(AValue: Boolean);
   public                                       
     property DropDownMenu: TPopupMenu read GetDropDownMenu write SetDropDownMenu;
     property Images: TCustomImageList read GetImages write SetImages;
+    property ImagesWidth: Integer read GetImagesWidth write SetImagesWidth default 0;
     property ImageIndex: TImageIndex read GetImageIndex write SetImageIndex default -1;  
     property Visible: Boolean read GetVisible write SetVisibile default False;
 
@@ -82,6 +85,7 @@ type
   published
     property DropDownMenu;
     property Images;
+    property ImagesWidth;
     property ImageIndex;
     property Visible;
   end;
@@ -221,16 +225,21 @@ end;
 procedure TCustomGlyphButtonOptions.SetVisibile(AValue: Boolean);
 begin
   if AValue <> (FButton.Visible) then
-  begin
     FButton.Visible := AValue;
-  end;
 end;
 
 procedure TCustomGlyphButtonOptions.SetImages(AValue: TCustomImageList);
 begin
   if FButton.Images <> AValue then
-  begin
     FButton.Images := AValue;
+end;
+
+procedure TCustomGlyphButtonOptions.SetImagesWidth(AValue: Integer);
+begin
+  if FButton.ImageWidth <> AValue then
+  begin
+    FButton.ImageWidth := AValue;
+    Invalidate;
   end;
 end;
 
@@ -263,6 +272,11 @@ end;
 function TCustomGlyphButtonOptions.GetImages: TCustomImageList;
 begin
   Result := FButton.Images;
+end;
+
+function TCustomGlyphButtonOptions.GetImagesWidth: Integer;
+begin
+  Result := FButton.ImageWidth;
 end;
 
 function TCustomGlyphButtonOptions.GetOnClick: TNotifyEvent;
@@ -306,10 +320,9 @@ procedure TCustomGlyphButtonOptions.UpdateSize;
 begin
   if ImageIndex <> -1 then
   begin
-    //TODO: See imagelist muliresolution
     if Images <> nil then
     begin
-      FButton.Width  := Images.Width;
+      FButton.Width  := FButton.ImageWidth;
       FButton.Constraints.MaxHeight := Images.Height;
     end
     else
@@ -330,6 +343,7 @@ begin
   if ASource is TCustomGlyphButtonOptions then
   begin
     Images := TCustomGlyphButtonOptions(ASource).Images;
+    ImagesWidth := TCustomGlyphButtonOptions(ASource).ImagesWidth;
     ImageIndex := TCustomGlyphButtonOptions(ASource).ImageIndex;
     Visible := TCustomGlyphButtonOptions(ASource).Visible;
   end;
