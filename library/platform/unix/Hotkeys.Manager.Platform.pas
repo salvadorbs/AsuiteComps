@@ -56,7 +56,7 @@ type
   private
     FDisplay: PDisplay;
 
-    {$IFDEF LCLGTK2}
+    {$IFDEF GTK}
     FRoot: PGdkWindow;
     {$ENDIF}
 
@@ -70,6 +70,11 @@ type
     function KeyToSym(Key: Word): TKeySym;
     function SymToKey(Sym: TKeySym): Word;
     function ModToShift(Modifiers: Integer): TShiftState;
+    procedure CaptureKey(Display: PDisplay; KeyCode: LongWord; Modifier: LongWord; Window: TWindow);
+    procedure ReleaseKey(Display: PDisplay; KeyCode: LongWord; Modifier: LongWord; Window: TWindow);
+    procedure AddEventFilter;
+    procedure RemoveEventFilter;
+    function InternalRegisterShortcut(AShortcut: TShortCutEx; ARegister: Boolean): Boolean;
   protected
     function DoRegister(Shortcut: TShortCutEx): Boolean; override;
     function DoUnregister(Shortcut: TShortCutEx): Boolean; override;
@@ -147,6 +152,112 @@ begin
     Include(Result, ssCtrl);
   if (SuperMask and Modifiers > 0) then
     Include(Result, ssMeta);
+end;
+
+procedure TUnixHotkeyManager.CaptureKey(Display: PDisplay; KeyCode: LongWord;
+  Modifier: LongWord; Window: TWindow);
+begin
+  { Capture keys without cap or num lock }
+  XGrabKey(Display, KeyCode, Modifier and NotLock, Window, 1, GrabModeAsync, GrabModeAsync);
+  { Capture keys with cap lock }
+  XGrabKey(Display, KeyCode, Modifier or CapLock, Window, 1, GrabModeAsync, GrabModeAsync);
+  { Capture keys with num lock }
+  XGrabKey(Display, KeyCode, Modifier or NumLock, Window, 1, GrabModeAsync, GrabModeAsync);
+  { Capture keys with cap or num lock }
+  XGrabKey(Display, KeyCode, Modifier or CapLock or NumLock, Window, 1, GrabModeAsync, GrabModeAsync);
+end;
+
+procedure TUnixHotkeyManager.ReleaseKey(Display: PDisplay; KeyCode: LongWord;
+  Modifier: LongWord; Window: TWindow);
+begin
+  { See comments in CaptureKey }
+  XUngrabKey(Display, KeyCode, Modifier and NotLock, Window);
+  XUngrabKey(Display, KeyCode, Modifier or CapLock, Window);
+  XUngrabKey(Display, KeyCode, Modifier or NumLock, Window);
+  XUngrabKey(Display, KeyCode, Modifier or CapLock or NumLock, Window);
+end;
+
+procedure TUnixHotkeyManager.AddEventFilter;
+begin
+  if Count = 0 then
+  begin
+    {$IFDEF GTK}
+    gdk_window_add_filter(FRoot, @FilterKeys, Self);
+    {$ENDIF}
+
+    {$IFDEF QT}
+    QGHotkey_hook_hook_installfilter(FQGHotkey, FilterKeys);
+    {$ENDIF}
+  end;
+end;
+
+procedure TUnixHotkeyManager.RemoveEventFilter;
+begin
+  if Count = 1 then
+  begin
+    {$IFDEF GTK}
+    gdk_window_remove_filter(FRoot, @FilterKeys, Self);
+    {$ENDIF}
+
+    {$IFDEF QT}
+    QGHotkey_hook_hook_removefilter(FQGHotkey);
+    {$ENDIF}
+  end;
+end;
+
+function TUnixHotkeyManager.InternalRegisterShortcut(AShortcut: TShortCutEx;
+  ARegister: Boolean): Boolean;
+var
+  Modifier: LongWord;
+  KeySym, ShiftSym: TKeySym;
+  KeyCode: LongWord;
+  Window: TWindow;
+  Key: Word;
+  ShiftState: TShiftState;
+begin
+  ShortCutToKey(AShortcut.SimpleShortcut, Key, ShiftState);
+
+  Result := Key <> 0;
+  if (Result) then
+  begin
+    Modifier := ShiftToMod(ShiftState);
+    KeySym := KeyToSym(Key);
+    KeyCode := XKeysymToKeycode(FDisplay, KeySym);
+
+    {$IFDEF LCLGTK2}
+    Window := gdk_x11_drawable_get_xid(FRoot);
+    {$ENDIF}
+
+    {$IFDEF LCLGTK3}
+    Window := gdk_x11_window_get_xid(FRoot);
+    {$ENDIF}
+
+    {$IFDEF QT}
+    Window := DefaultRootWindow(FDisplay);
+    {$ENDIF}
+
+    if ARegister then
+      CaptureKey(FDisplay, KeyCode, Modifier, Window)
+    else
+      ReleaseKey(FDisplay, KeyCode, Modifier, Window);
+
+    ShiftSym := XKeycodeToKeysym(FDisplay, KeyCode, 1);
+
+    if KeySym <> ShiftSym then
+    begin
+      KeyCode := XKeysymToKeycode(FDisplay, ShiftSym);
+
+      if ARegister then
+        CaptureKey(FDisplay, KeyCode, Modifier, Window)
+      else
+        ReleaseKey(FDisplay, KeyCode, Modifier, Window);
+    end;
+
+    if ARegister then
+      AddEventFilter
+    else
+      RemoveEventFilter;
+  end;
 end;
 
 function TUnixHotkeyManager.KeyToSym(Key: Word): TKeySym;
@@ -409,135 +520,14 @@ begin
   end;
 end;
 
-function TUnixHotkeyManager.DoRegister(Shortcut: TShortcutEx): Boolean;
-
-  procedure CaptureKey(Display: PDisplay; KeyCode: LongWord; Modifier: LongWord; Window: TWindow);
-  begin
-    { Capture keys without cap or num lock }
-    XGrabKey(Display, KeyCode, Modifier and NotLock, Window, 1, GrabModeAsync, GrabModeAsync);
-    { Capture keys with cap lock }
-    XGrabKey(Display, KeyCode, Modifier or CapLock, Window, 1, GrabModeAsync, GrabModeAsync);
-    { Capture keys with num lock }
-    XGrabKey(Display, KeyCode, Modifier or NumLock, Window, 1, GrabModeAsync, GrabModeAsync);
-    { Capture keys with cap or num lock }
-    XGrabKey(Display, KeyCode, Modifier or CapLock or NumLock, Window, 1, GrabModeAsync, GrabModeAsync);
-  end;
-
-var
-  Modifier: LongWord;
-  KeySym, ShiftSym: TKeySym;
-  KeyCode: LongWord;
-  Window: TWindow;
-  Key: Word;
-  ShiftState: TShiftState;
-
-  {$IFDEF QT}
-  QGHotkey_hook: QGHotkey_hookH;
-  {$ENDIF}
+function TUnixHotkeyManager.DoRegister(Shortcut: TShortCutEx): Boolean;
 begin
-  ShortCutToKey(Shortcut.SimpleShortcut, Key, ShiftState);
-
-  Result := Key <> 0;
-  if (Result) then
-  begin
-    Modifier := ShiftToMod(ShiftState);
-    KeySym := KeyToSym(Key);
-    KeyCode := XKeysymToKeycode(FDisplay, KeySym);
-
-    {$IFDEF LCLGTK2}
-    Window := gdk_x11_drawable_get_xid(FRoot);
-    {$ENDIF}
-
-    {$IFDEF LCLGTK3}
-    Window := gdk_x11_window_get_xid(FRoot);
-    {$ENDIF}
-
-    {$IFDEF QT}
-    Window := DefaultRootWindow(FDisplay);
-    {$ENDIF}
-
-    CaptureKey(FDisplay, KeyCode, Modifier, Window);
-    ShiftSym := XKeycodeToKeysym(FDisplay, KeyCode, 1);
-
-    if KeySym <> ShiftSym then
-    begin
-      KeyCode := XKeysymToKeycode(FDisplay, ShiftSym);
-      CaptureKey(FDisplay, KeyCode, Modifier, Window);
-    end;
-
-    if Count = 0 then
-    begin
-      {$IFDEF GTK}
-      gdk_window_add_filter(FRoot, @FilterKeys, Self);
-      {$ENDIF}
-
-      {$IFDEF QT}
-      QGHotkey_hook_hook_installfilter(FQGHotkey, FilterKeys);
-      {$ENDIF}
-    end;
-  end;
+  Result := InternalRegisterShortcut(Shortcut, True);
 end;
 
-function TUnixHotkeyManager.DoUnregister(Shortcut: TShortcutEx): Boolean;
-
-  procedure ReleaseKey(Display: PDisplay; KeyCode: LongWord; Modifier: LongWord; Window: TWindow);
-  begin
-    { See comments in CaptureKey }
-    XUngrabKey(Display, KeyCode, Modifier and NotLock, Window);
-    XUngrabKey(Display, KeyCode, Modifier or CapLock, Window);
-    XUngrabKey(Display, KeyCode, Modifier or NumLock, Window);
-    XUngrabKey(Display, KeyCode, Modifier or CapLock or NumLock, Window);
-  end;
-
-var
-  Modifier: LongWord;
-  KeySym, ShiftSym: TKeySym;
-  KeyCode: LongWord;
-  Window: TWindow;
-  Key: Word;
-  ShiftState: TShiftState;
+function TUnixHotkeyManager.DoUnregister(Shortcut: TShortCutEx): Boolean;
 begin
-  ShortCutToKey(Shortcut.SimpleShortcut, Key, ShiftState);
-
-  Result := Key <> 0;
-  if (Result) then
-  begin
-    Modifier := ShiftToMod(ShiftState);
-    KeySym := KeyToSym(Key);
-    KeyCode := XKeysymToKeycode(FDisplay, KeySym);
-
-    {$IFDEF LCLGTK2}
-    Window := gdk_x11_drawable_get_xid(FRoot);
-    {$ENDIF}
-
-    {$IFDEF LCLGTK3}
-    Window := gdk_x11_window_get_xid(FRoot);
-    {$ENDIF}
-
-    {$IFDEF QT}
-    Window := DefaultRootWindow(FDisplay);
-    {$ENDIF}
-
-    ReleaseKey(FDisplay, KeyCode, Modifier, Window);
-    ShiftSym := XKeycodeToKeysym(FDisplay, KeyCode, 1);
-
-    if KeySym <> ShiftSym then
-    begin
-      KeyCode := XKeysymToKeycode(FDisplay, ShiftSym);
-      ReleaseKey(FDisplay, KeyCode, Modifier, Window);
-    end;
-
-    if Count = 1 then
-    begin
-      {$IFDEF GTK}
-      gdk_window_remove_filter(FRoot, @FilterKeys, Self);
-      {$ENDIF}
-
-      {$IFDEF QT}
-      QGHotkey_hook_hook_removefilter(FQGHotkey);
-      {$ENDIF}
-    end;
-  end;
+  Result := InternalRegisterShortcut(Shortcut, False);
 end;
 
 constructor TUnixHotkeyManager.Create;
