@@ -26,6 +26,10 @@ unit Hotkeys.Manager.Platform;
 
 {$I ASuiteComps.inc}
 
+{$IFDEF LCLGTK3}
+  {$LINKLIB libgdk-3.so.0}
+{$ENDIF}
+
 interface
 
 uses
@@ -34,6 +38,10 @@ uses
 
   {$IFDEF LCLGTK2}
   , Gdk2, Gdk2x, Gtk2Proc
+  {$ENDIF}   
+
+  {$IFDEF LCLGTK3}
+  , LazGdk3, LazGLib2
   {$ENDIF}
 
   {$IFDEF QT}
@@ -71,11 +79,13 @@ type
     function IsHotkeyAvailable(Shortcut: TShortCut): Boolean; override;
   end;
 
-{$IFDEF LCLGTK2}
+{$IFDEF GTK}
 function FilterKeys(AnyEvent: PXAnyEvent; Event: PGdkEvent; Data: Pointer): TGdkFilterReturn; cdecl;
 {$ENDIF}
+
 {$IFDEF LCLGTK3}
-procedure DummyMethod(KeyCode: Cardinal; KeyState: Cardinal);
+function gdk_x11_window_get_xid(AX11Window: PGdkWindow): guint32; cdecl; external;
+function gdk_x11_display_get_xdisplay(AX11Display: PGdkDisplay): PDisplay; cdecl; external;
 {$ENDIF}
 
 { Returns the global hotkey manager instance }
@@ -347,34 +357,25 @@ begin
   end;
 end;
 
-{$IFDEF LCLGTK2}
+{$IFDEF GTK}
 function FilterKeys(AnyEvent: PXAnyEvent; Event: PGdkEvent; Data: Pointer): TGdkFilterReturn; cdecl;
-{$ENDIF}
-{$IFDEF LCLGTK3}
-procedure DummyMethod(KeyCode: Cardinal; KeyState: Cardinal);
 {$ENDIF}
 {$IFDEF QT}
 function TUnixHotkeyManager.FilterKeys(handle: QGHotkey_hookH; KeyCode: Cardinal; KeyState: Cardinal): boolean; cdecl;
 {$ENDIF}
 var
-  {$IFDEF LCLGTK2}
+  {$IFDEF GTK}
   Self: TUnixHotkeyManager absolute Data;
   KeyEvent: PXKeyEvent absolute AnyEvent;
   KeyCode: Cardinal;
   KeyState: Cardinal;
   {$ENDIF}
-  
-  {$IFDEF LCLGTK3}
-  Self: TUnixHotkeyManager;
-  {$ENDIF}
 
   Sym: TKeySym;
-  Key: Word;
-  ShiftState: TShiftState;
   H: TShortcutEx;
   I: Integer;
 begin
-  {$IFDEF LCLGTK2}
+  {$IFDEF GTK}
   if AnyEvent._type <> KeyPress then
     Exit(GDK_FILTER_CONTINUE);
 
@@ -391,7 +392,7 @@ begin
     if Assigned(H.Notify) then
       H.Notify(Self, H);
 
-  {$IFDEF LCLGTK2}
+  {$IFDEF GTK}
     Result := GDK_FILTER_REMOVE;
   {$ENDIF}
   {$IFDEF QT}
@@ -399,7 +400,7 @@ begin
   {$ENDIF}
   end
   else begin
-  {$IFDEF LCLGTK2}
+  {$IFDEF GTK}
     Result := GDK_FILTER_CONTINUE;
   {$ENDIF}
   {$IFDEF QT}
@@ -447,6 +448,10 @@ begin
     Window := gdk_x11_drawable_get_xid(FRoot);
     {$ENDIF}
 
+    {$IFDEF LCLGTK3}
+    Window := gdk_x11_window_get_xid(FRoot);
+    {$ENDIF}
+
     {$IFDEF QT}
     Window := DefaultRootWindow(FDisplay);
     {$ENDIF}
@@ -462,7 +467,7 @@ begin
 
     if Count = 0 then
     begin
-      {$IFDEF LCLGTK2}
+      {$IFDEF GTK}
       gdk_window_add_filter(FRoot, @FilterKeys, Self);
       {$ENDIF}
 
@@ -505,6 +510,10 @@ begin
     Window := gdk_x11_drawable_get_xid(FRoot);
     {$ENDIF}
 
+    {$IFDEF LCLGTK3}
+    Window := gdk_x11_window_get_xid(FRoot);
+    {$ENDIF}
+
     {$IFDEF QT}
     Window := DefaultRootWindow(FDisplay);
     {$ENDIF}
@@ -520,7 +529,7 @@ begin
 
     if Count = 1 then
     begin
-      {$IFDEF LCLGTK2}
+      {$IFDEF GTK}
       gdk_window_remove_filter(FRoot, @FilterKeys, Self);
       {$ENDIF}
 
@@ -535,9 +544,17 @@ constructor TUnixHotkeyManager.Create;
 begin
   inherited Create;
 
-  {$IFDEF LCLGTK2}
+  {$IFDEF GTK}
   FRoot := gdk_get_default_root_window;
+
+  {$IFDEF LCLGTK2}
   FDisplay := GDK_WINDOW_XDISPLAY(FRoot);
+  {$ENDIF}
+
+  {$IFDEF LCLGTK3}
+  FDisplay := gdk_x11_display_get_xdisplay(gdk_window_get_display(FRoot));
+  {$ENDIF}
+
   {$ENDIF}
 
   {$IFDEF QT}
