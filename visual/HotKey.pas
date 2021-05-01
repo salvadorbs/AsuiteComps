@@ -95,6 +95,7 @@ begin
   FNoModifier := False;
   FBackgroundColor := clWindow;
   FTextColor := clCaptionText;
+  FBorderColor := clBtnShadow;
   FAcceptsInput := False;
   {FAutoSelect := True;
   FAutoSelected := False;
