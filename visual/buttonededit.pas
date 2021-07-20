@@ -127,10 +127,14 @@ type
 
     procedure UpdateSize;
   protected     
-    class function GetControlClassDefaultSize: TSize; override;
+    class function GetControlClassDefaultSize: TSize; override;  
+    procedure Notification(AComponent: TComponent; Operation: TOperation); override;
   public
     constructor Create(AOwner: TComponent); override;
     destructor Destroy; override;
+
+    procedure SetFocus; override;    
+    function Focused: Boolean; override;
 
     property CharCase: TEditCharCase read GetCharCase write SetCharCase default ecNormal;
     property Font: TFont read GetFont write SetFont;
@@ -487,6 +491,14 @@ begin
   Result := inherited GetControlClassDefaultSize;
 end;
 
+procedure TCustomButtonedEdit.Notification(AComponent: TComponent;
+  Operation: TOperation);
+begin
+  inherited Notification(AComponent, Operation);
+  if (AComponent = FEditText) and (Operation = opRemove) then
+    FEditText := nil;
+end;
+
 constructor TCustomButtonedEdit.Create(AOwner: TComponent);
 begin
   inherited Create(AOwner);
@@ -528,6 +540,16 @@ begin
   FreeAndNil(FRightButton);
 
   inherited Destroy;
+end;
+
+procedure TCustomButtonedEdit.SetFocus;
+begin
+  FEditText.SetFocus;
+end;
+
+function TCustomButtonedEdit.Focused: Boolean;
+begin
+  Result:= FEditText.Focused;
 end;
 
 end.
