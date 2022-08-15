@@ -208,7 +208,6 @@ end;
 
 procedure TCustomGlyphButton.Click;
 var
-  X, Y: Integer;
   P1, P2: TPoint;
 begin
   inherited Click;
@@ -218,9 +217,7 @@ begin
     P1.X:= 0;
     P1.Y:= Self.Height;
     P2:= Self.ClientToScreen(P1);
-    X:= P2.x;
-    Y:= P2.y;
-    FDropDownMenu.PopUp(X, Y);
+    FDropDownMenu.PopUp(P2.X, P2.Y);
   end;
 end;
 
@@ -317,6 +314,9 @@ begin
   FButton.Parent := TWinControl(FParentControl);
   FButton.Visible := False;
 
+  //Workaround to compensate for incorrect button position (vertical center)
+  FButton.BorderSpacing.Top := 1;
+
   UpdateSize;
 end;
 
@@ -389,7 +389,7 @@ end;
 
 procedure TCustomButtonedEdit.SetFont(AValue: TFont);
 begin
-  if FEditText.Font <> AValue then
+  if FEditText.Font.IsEqual(AValue) then
     FEditText.Font := AValue;
 end;
 
@@ -519,9 +519,9 @@ begin
   begin
     Align := alClient;
     BorderStyle := bsNone;
-    BorderSpacing.Left := 3;
-    BorderSpacing.Right := 3;
-    BorderSpacing.Top := 3;
+    BorderSpacing.Left := 1;
+    BorderSpacing.Right := 1;
+    BorderSpacing.Top := 1;
     Parent := Self;
     ParentColor := True;
     ParentFont := False;
@@ -530,7 +530,7 @@ begin
     OnKeyPress := DoEditTextKeyPress;
   end;
 
-  updateSize;
+  UpdateSize;
 end;
 
 destructor TCustomButtonedEdit.Destroy;
