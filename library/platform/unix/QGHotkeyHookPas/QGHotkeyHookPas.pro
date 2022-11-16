@@ -1,6 +1,6 @@
 VERSION = 1.0.0
 
-QT += gui x11extras
+QT += gui
 TARGET = QGHotkeyHookPas
 TEMPLATE = lib
 VPATH = src
@@ -19,7 +19,6 @@ unix:!embedded:!mac:!haiku:PLATFORM = BINUX
 
 CONFIG -= debug_and_release
 CONFIG -= debug_and_release_target
-CONFIG -= debug
 CONFIG -= warn_on
 CONFIG -= create_prl
 CONFIG -= link_prl
