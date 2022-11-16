@@ -44,8 +44,16 @@ uses
   , LazGdk3, LazGLib2
   {$ENDIF}
 
+  {$IFDEF LCLQT5}
+  , qt5, qtint
+  {$ENDIF}
+
+  {$IFDEF LCLQT6}
+  , qt6, qtint
+  {$ENDIF}
+
   {$IFDEF QT}
-  , qt5, QGHotkeyHookPas
+  , QGHotkeyHookPas
   {$ENDIF};
 
 type
@@ -354,8 +362,8 @@ begin
     VK_LCL_SLASH: Result := XK_SLASH;
     VK_LCL_SEMI_COMMA: Result := XK_SEMICOLON;
     VK_LCL_MINUS: Result := XK_MINUS;
-    VK_LCL_OPEN_BRAKET: Result := XK_BRACKETLEFT;
-    VK_LCL_CLOSE_BRAKET: Result := XK_BRACKETRIGHT;
+    VK_LCL_OPEN_BRACKET: Result := XK_BRACKETLEFT;
+    VK_LCL_CLOSE_BRACKET: Result := XK_BRACKETRIGHT;
     VK_LCL_BACKSLASH: Result := XK_BACKSLASH;
     VK_LCL_TILDE: Result := XK_GRAVE;
     VK_LCL_QUOTE: Result := XK_SINGLELOWQUOTEMARK;
@@ -458,8 +466,8 @@ begin
     XK_SLASH: Result := VK_LCL_SLASH;
     XK_SEMICOLON: Result := VK_LCL_SEMI_COMMA;
     XK_MINUS: Result := VK_LCL_MINUS;
-    XK_BRACKETLEFT: Result := VK_LCL_OPEN_BRAKET;
-    XK_BRACKETRIGHT: Result := VK_LCL_CLOSE_BRAKET;
+    XK_BRACKETLEFT: Result := VK_LCL_OPEN_BRACKET;
+    XK_BRACKETRIGHT: Result := VK_LCL_CLOSE_BRACKET;
     XK_BACKSLASH: Result := VK_LCL_BACKSLASH;
     XK_GRAVE: Result := VK_LCL_TILDE;
     XK_SINGLELOWQUOTEMARK: Result := VK_LCL_QUOTE;
@@ -537,19 +545,25 @@ begin
   {$IFDEF GTK}
   FRoot := gdk_get_default_root_window;
 
-  {$IFDEF LCLGTK2}
-  FDisplay := GDK_WINDOW_XDISPLAY(FRoot);
-  {$ENDIF}
+    {$IFDEF LCLGTK2}
+    FDisplay := GDK_WINDOW_XDISPLAY(FRoot);
+    {$ENDIF}
 
-  {$IFDEF LCLGTK3}
-  FDisplay := gdk_x11_display_get_xdisplay(gdk_window_get_display(FRoot));
-  {$ENDIF}
+    {$IFDEF LCLGTK3}
+    FDisplay := gdk_x11_display_get_xdisplay(gdk_window_get_display(FRoot));
+    {$ENDIF}
 
   {$ENDIF}
-
+                
   {$IFDEF QT}
-  FDisplay := QX11Info_display();
-  FQGHotkey := QGHotkey_hook_Create(QCoreApplication_instance());
+    {$IFDEF LCLQT5}
+    FDisplay := QX11Info_display();
+    {$ENDIF}
+
+    {$IFDEF LCLQT6}
+    FDisplay := QtWidgetSet.x11Display;
+    {$ENDIF}        
+    FQGHotkey := QGHotkey_hook_Create(QCoreApplication_instance());
   {$ENDIF}
 end;
 

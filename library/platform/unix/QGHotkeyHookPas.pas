@@ -23,14 +23,20 @@ unit QGHotkeyHookPas;
 
 interface
 
-uses Types, qt5;
+uses Types
+
+  {$IFDEF LCLQT5}
+  , qt5
+  {$ENDIF}
+
+  {$IFDEF LCLQT6}
+  , qt6
+  {$ENDIF};
 
 {$MINENUMSIZE 4}
 
 const
   ApplicationFlags = QT_VERSION or $1000000;
-
-{DEFINE QT_5}
 
 {$IFDEF MSWINDOWS}
   QGHotkeyPasLib = 'libQGHotkeyPas.dll';

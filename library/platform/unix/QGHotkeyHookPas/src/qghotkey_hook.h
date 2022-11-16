@@ -24,10 +24,14 @@
 #include <qabstractnativeeventfilter.h>
 #include "pascalbind.h"
 
-#include <QX11Info>
-#include <X11/Xlib.h>
 #include <xcb/xcb.h>
 #include <xcb/xcb_keysyms.h>
+
+#if QT_VERSION >= QT_VERSION_CHECK(6, 2, 0)
+	#define _NATIVE_EVENT_RESULT qintptr
+#else
+	#define _NATIVE_EVENT_RESULT long
+#endif
 
 
 class Q_GHotkey_hook : public QAbstractNativeEventFilter {
@@ -55,13 +59,15 @@ class Q_GHotkey_hook : public QAbstractNativeEventFilter {
         handle->installNativeEventFilter(this);
         events = hook;
       }
-      if (!hook.func) handle->removeNativeEventFilter(this);
+      if (!hook.func)
+        handle->removeNativeEventFilter(this);
       events = hook;
     }
   }
   void hook_removefilter() {
     if (handle) {
-      handle->removeNativeEventFilter(this);
+      handle->removeNativeEventFilter(this);   
+      events.func = NULL;
     }
   }
 
@@ -73,7 +79,7 @@ class Q_GHotkey_hook : public QAbstractNativeEventFilter {
 
     QCoreApplication *handle;
 
-    virtual bool nativeEventFilter(const QByteArray &eventType, void *message, long *result) {
+    virtual bool nativeEventFilter(const QByteArray &eventType, void *message, _NATIVE_EVENT_RESULT *result) {
       if (events.func) {
         auto *genericEvent = static_cast<xcb_generic_event_t *>(message);
 
