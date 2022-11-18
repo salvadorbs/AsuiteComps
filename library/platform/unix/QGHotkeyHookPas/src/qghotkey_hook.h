@@ -25,7 +25,6 @@
 #include "pascalbind.h"
 
 #include <xcb/xcb.h>
-#include <xcb/xcb_keysyms.h>
 
 #if QT_VERSION >= QT_VERSION_CHECK(6, 2, 0)
 	#define _NATIVE_EVENT_RESULT qintptr
@@ -81,20 +80,9 @@ class Q_GHotkey_hook : public QAbstractNativeEventFilter {
 
     virtual bool nativeEventFilter(const QByteArray &eventType, void *message, _NATIVE_EVENT_RESULT *result) {
       if (events.func) {
-        auto *genericEvent = static_cast<xcb_generic_event_t *>(message);
-
-        //Pass to FPC only XCB_KEY_PRESS
-        if (genericEvent->response_type == XCB_KEY_PRESS) {
-          Q_GHotkey_hook* sender = this;
-
-          // Pass keyCode and Modifiers to FPC
-          xcb_key_press_event_t *keyEvent = static_cast<xcb_key_press_event_t *>(message);
-          uint8_t keyCode = (uint8_t) keyEvent->detail;
-          uint16_t keyState = (uint8_t) keyEvent->state;
-
-          typedef bool (*func_type)(void *data, Q_GHotkey_hook* sender, uint8_t keyCode, uint16_t keyState);
-          return (*(func_type)events.func)(events.data, sender, keyCode, keyState);
-        }
+        Q_GHotkey_hook* sender = this;
+        typedef bool (*func_type)(void *data, Q_GHotkey_hook* sender, const QByteArray &eventType, void *message);
+        return (*(func_type)events.func)(events.data, sender, eventType, message);
       }
       return false;
     }

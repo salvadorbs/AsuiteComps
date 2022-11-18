@@ -53,7 +53,7 @@ uses
   {$ENDIF}
 
   {$IFDEF QT}
-  , QGHotkeyHookPas
+  , QGHotkeyHookPas, xcb
   {$ENDIF};
 
 type
@@ -71,7 +71,7 @@ type
     {$IFDEF QT}
     FQGHotkey: QGHotkey_hookH;
 
-    function FilterKeys(handle: QGHotkey_hookH; KeyCode: Cardinal; KeyState: Cardinal): boolean; cdecl;
+    function FilterKeys(handle: QGHotkey_hookH; eventType: QByteArrayH; message: Pointer): boolean; cdecl;
     {$ENDIF}
 
     function ShiftToMod(ShiftState: TShiftState): Integer;
@@ -127,6 +127,24 @@ const
   NotLock = Integer(not (CapLock or NumLock));
 
 implementation
+
+function InternalFilterKeys(Self: TUnixHotkeyManager; KeyCode: Cardinal; KeyState: Cardinal): Boolean;
+var
+  I: Integer;
+  H: TShortcutEx;
+  Sym: TKeySym;
+begin
+  Sym := XKeycodeToKeysym(Self.FDisplay, KeyCode, 0);
+  I := Self.FindHotkey(Self.SymToKey(Sym), Self.ModToShift(KeyState));
+
+  Result := I > -1;
+  if Result then
+  begin
+    H := Self[I];
+    if Assigned(H.Notify) then
+      H.Notify(Self, H);
+  end;
+end;
 
 function HotkeyManager: TBaseHotkeyManager;
 begin
@@ -478,55 +496,39 @@ end;
 
 {$IFDEF GTK}
 function FilterKeys(AnyEvent: PXAnyEvent; Event: PGdkEvent; Data: Pointer): TGdkFilterReturn; cdecl;
-{$ENDIF}
-{$IFDEF QT}
-function TUnixHotkeyManager.FilterKeys(handle: QGHotkey_hookH; KeyCode: Cardinal; KeyState: Cardinal): boolean; cdecl;
-{$ENDIF}
 var
-  {$IFDEF GTK}
   Self: TUnixHotkeyManager absolute Data;
   KeyEvent: PXKeyEvent absolute AnyEvent;
-  KeyCode: Cardinal;
-  KeyState: Cardinal;
-  {$ENDIF}
 
   Sym: TKeySym;
   H: TShortcutEx;
   I: Integer;
 begin
-  {$IFDEF GTK}
   if AnyEvent._type <> KeyPress then
     Exit(GDK_FILTER_CONTINUE);
 
-  KeyCode := KeyEvent.keycode;
-  KeyState := KeyEvent.state;
-  {$ENDIF}
-
-  Sym := XKeycodeToKeysym(Self.FDisplay, KeyCode, 0);
-  I := Self.FindHotkey(Self.SymToKey(Sym), Self.ModToShift(KeyState));
-
-  if I > -1 then
-  begin
-    H := Self[I];
-    if Assigned(H.Notify) then
-      H.Notify(Self, H);
-
-  {$IFDEF GTK}
-    Result := GDK_FILTER_REMOVE;
-  {$ENDIF}
-  {$IFDEF QT}
-    Result := True;
-  {$ENDIF}
-  end
-  else begin
-  {$IFDEF GTK}
+  if InternalFilterKeys(Self, KeyEvent.keycode, KeyEvent.state) then
+    Result := GDK_FILTER_REMOVE
+  else
     Result := GDK_FILTER_CONTINUE;
-  {$ENDIF}
-  {$IFDEF QT}
-    Result := False;
-  {$ENDIF}
+end;  
+{$ENDIF}
+
+{$IFDEF QT}
+function TUnixHotkeyManager.FilterKeys(handle: QGHotkey_hookH;
+  eventType: QByteArrayH; message: Pointer): boolean; cdecl;
+var
+  XCBKeyPressEvent: Pxcb_key_press_event_t;
+begin
+  Result := False;
+  if (QByteArray_data(eventType) = 'xcb_generic_event_t') and (Pxcb_generic_event_t(message).response_type = XCB_KEY_PRESS) then
+  begin
+    XCBKeyPressEvent := Pxcb_key_press_event_t(message);
+
+    Result := InternalFilterKeys(Self, XCBKeyPressEvent.detail, XCBKeyPressEvent.state);
   end;
-end;
+end;   
+{$ENDIF}
 
 function TUnixHotkeyManager.DoRegister(Shortcut: TShortCutEx): Boolean;
 begin
