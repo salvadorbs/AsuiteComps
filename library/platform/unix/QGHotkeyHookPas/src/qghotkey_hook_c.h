@@ -29,4 +29,8 @@ C_EXPORT void Q_GHotkey_hook_hook_installfilter(Q_GHotkey_hookH handle, QHookH h
 C_EXPORT void Q_GHotkey_hook_hook_destroyed(Q_GHotkey_hookH handle, QHookH hook);
 C_EXPORT void Q_GHotkey_hook_hook_removefilter(Q_GHotkey_hookH handle);
 
+#if QT_VERSION >= QT_VERSION_CHECK(6, 2, 0)
+C_EXPORT Display* QX11Info_display();
+#endif
+
 #endif

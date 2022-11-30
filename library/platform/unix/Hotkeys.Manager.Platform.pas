@@ -34,7 +34,7 @@ interface
 
 uses
   X, XLib, KeySym, Hotkeys.Manager, Hotkeys.ShortcutEx, LCLType, Menus, LCLProc,
-  Classes
+  Classes, sysutils
 
   {$IFDEF LCLGTK2}
   , Gdk2, Gdk2x, Gtk2Proc
@@ -49,7 +49,7 @@ uses
   {$ENDIF}
 
   {$IFDEF LCLQT6}
-  , qt6, qtint
+  , qt6
   {$ENDIF}
 
   {$IFDEF QT}
@@ -558,13 +558,7 @@ begin
   {$ENDIF}
                 
   {$IFDEF QT}
-    {$IFDEF LCLQT5}
     FDisplay := QX11Info_display();
-    {$ENDIF}
-
-    {$IFDEF LCLQT6}
-    FDisplay := QtWidgetSet.x11Display;
-    {$ENDIF}        
     FQGHotkey := QGHotkey_hook_Create(QCoreApplication_instance());
   {$ENDIF}
 end;

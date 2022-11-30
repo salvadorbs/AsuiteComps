@@ -18,6 +18,9 @@
 //******************************************************************************
 
 #include "qghotkey_hook_c.h"
+#if QT_VERSION >= QT_VERSION_CHECK(6, 2, 0)
+    #include <QtGui/6.2.4/QtGui/private/qtx11extras_p.h>
+#endif
 
 Q_GHotkey_hookH Q_GHotkey_hook_Create(QCoreApplicationH handle)
 {
@@ -43,3 +46,10 @@ void Q_GHotkey_hook_hook_removefilter(Q_GHotkey_hookH handle)
 {
     ((Q_GHotkey_hook *)handle)->hook_removefilter();
 }
+
+#if QT_VERSION >= QT_VERSION_CHECK(6, 2, 0)
+Display* QX11Info_display()
+{
+	return (Display*) QX11Info::display();
+}
+#endif

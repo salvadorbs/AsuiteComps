@@ -1,6 +1,11 @@
 VERSION = 1.0.0
 
 QT += gui
+
+#if QT_VERSION >= QT_VERSION_CHECK(6, 2, 0)
+QT += core-private
+#endif
+
 TARGET = QGHotkeyHookPas
 TEMPLATE = lib
 VPATH = src

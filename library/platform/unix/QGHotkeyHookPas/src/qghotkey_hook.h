@@ -36,7 +36,8 @@
 class Q_GHotkey_hook : public QAbstractNativeEventFilter {
   //Q_OBJECT
 
-  public:
+  public:  
+	bool nativeEventFilter(const QByteArray &eventType, void *message, _NATIVE_EVENT_RESULT *result) override;
 
   Q_GHotkey_hook(QCoreApplication *handle) : QAbstractNativeEventFilter() {
     this->handle = handle;
@@ -78,15 +79,6 @@ class Q_GHotkey_hook : public QAbstractNativeEventFilter {
 
     QCoreApplication *handle;
 
-    virtual bool nativeEventFilter(const QByteArray &eventType, void *message, _NATIVE_EVENT_RESULT *result) {
-      if (events.func) {
-        Q_GHotkey_hook* sender = this;
-        typedef bool (*func_type)(void *data, Q_GHotkey_hook* sender, const QByteArray &eventType, void *message);
-        return (*(func_type)events.func)(events.data, sender, eventType, message);
-      }
-      return false;
-    }
-
   private slots:
 
     void destroyed_hook() {
@@ -101,5 +93,15 @@ class Q_GHotkey_hook : public QAbstractNativeEventFilter {
     QHook events;
     QHook destroyed_event;
 };
+
+
+bool Q_GHotkey_hook::nativeEventFilter(const QByteArray &eventType, void *message, _NATIVE_EVENT_RESULT *result) {
+  if (events.func) {
+    Q_GHotkey_hook* sender = this;
+    typedef bool (*func_type)(void *data, Q_GHotkey_hook* sender, const QByteArray &eventType, void *message);
+    return (*(func_type)events.func)(events.data, sender, eventType, message);
+  }
+  return false;
+}
 
 #endif

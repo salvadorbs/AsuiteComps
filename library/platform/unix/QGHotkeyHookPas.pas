@@ -61,6 +61,10 @@ type
   procedure QGHotkey_hook_hook_destroyed(handle : QGHotkey_hookH; hook : QObject_destroyed_Event); cdecl; external QGHotkeyPasLib name 'Q_GHotkey_hook_hook_destroyed';
   procedure QGHotkey_hook_hook_removefilter(handle : QGHotkey_hookH); cdecl; external QGHotkeyPasLib name 'Q_GHotkey_hook_hook_removefilter';
 
+  {$IFDEF LCLQT6}
+  function QX11Info_display(): PDisplay; cdecl; external QGHotkeyPasLib name 'QX11Info_display';    
+  {$ENDIF}
+
 implementation
 
 end.
