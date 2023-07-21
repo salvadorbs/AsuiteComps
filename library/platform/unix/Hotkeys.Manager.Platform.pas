@@ -45,7 +45,7 @@ uses
   {$ENDIF}
 
   {$IFDEF LCLQT5}
-  , qt5, qtint
+  , qt5
   {$ENDIF}
 
   {$IFDEF LCLQT6}
@@ -53,7 +53,7 @@ uses
   {$ENDIF}
 
   {$IFDEF QT}
-  , QGHotkeyHookPas, xcb
+  , xcb, qtint
   {$ENDIF};
 
 type
@@ -69,9 +69,9 @@ type
     {$ENDIF}
 
     {$IFDEF QT}
-    FQGHotkey: QGHotkey_hookH;
+    FQNativeEventFilter: QNativeEventFilter_hookH;
 
-    function FilterKeys(handle: QGHotkey_hookH; eventType: QByteArrayH; message: Pointer): boolean; cdecl;
+    function FilterKeys(handle: QNativeEventFilter_hookH; eventType: QByteArrayH; message: long): boolean; cdecl;
     {$ENDIF}
 
     function ShiftToMod(ShiftState: TShiftState): Integer;
@@ -212,7 +212,7 @@ begin
     {$ENDIF}
 
     {$IFDEF QT}
-    QGHotkey_hook_hook_installfilter(FQGHotkey, FilterKeys);
+    QNativeEventFilter_hook_installfilter(FQNativeEventFilter, FilterKeys);
     {$ENDIF}
   end;
 end;
@@ -226,7 +226,7 @@ begin
     {$ENDIF}
 
     {$IFDEF QT}
-    QGHotkey_hook_hook_removefilter(FQGHotkey);
+    QNativeEventFilter_hook_removefilter(FQNativeEventFilter);
     {$ENDIF}
   end;
 end;
@@ -515,19 +515,25 @@ end;
 {$ENDIF}
 
 {$IFDEF QT}
-function TUnixHotkeyManager.FilterKeys(handle: QGHotkey_hookH;
-  eventType: QByteArrayH; message: Pointer): boolean; cdecl;
+function TUnixHotkeyManager.FilterKeys(handle: QNativeEventFilter_hookH;
+  eventType: QByteArrayH; message: long): boolean; cdecl;
 var
   XCBKeyPressEvent: Pxcb_key_press_event_t;
 begin
   Result := False;
-  if (QByteArray_data(eventType) = 'xcb_generic_event_t') and (Pxcb_generic_event_t(message).response_type = XCB_KEY_PRESS) then
+  if (QByteArray_data(eventType) = 'xcb_generic_event_t') then
   begin
-    XCBKeyPressEvent := Pxcb_key_press_event_t(message);
+    if (Pxcb_generic_event_t(message).response_type = XCB_KEY_PRESS) then
+    begin                                                                  
 
-    Result := InternalFilterKeys(Self, XCBKeyPressEvent.detail, XCBKeyPressEvent.state);
+      DebugLn(inttostr(Pxcb_generic_event_t(message).response_type));
+      XCBKeyPressEvent := Pxcb_key_press_event_t(message);
+
+      Result := InternalFilterKeys(Self, XCBKeyPressEvent.detail, XCBKeyPressEvent.state);
+    end;
+
   end;
-end;   
+end;
 {$ENDIF}
 
 function TUnixHotkeyManager.DoRegister(Shortcut: TShortCutEx): Boolean;
@@ -558,8 +564,14 @@ begin
   {$ENDIF}
                 
   {$IFDEF QT}
+    {$IFDEF LCLQT5}
     FDisplay := QX11Info_display();
-    FQGHotkey := QGHotkey_hook_Create(QCoreApplication_instance());
+    {$ENDIF}
+
+    {$IFDEF LCLQT6}
+    FDisplay := QtWidgetSet.x11Display;
+    {$ENDIF}
+    FQNativeEventFilter := QNativeEventFilter_hook_Create(QCoreApplication_instance());
   {$ENDIF}
 end;
 
