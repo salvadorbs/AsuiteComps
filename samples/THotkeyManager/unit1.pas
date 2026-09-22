@@ -6,7 +6,7 @@ interface
 
 uses
   Classes, SysUtils, Forms, Controls, Graphics, Dialogs, StdCtrls,
-  Hotkeys.Manager.Platform, HotKey, Hotkeys.ShortcutEx;
+  LCLProc, Hotkeys.Manager.Platform, HotKey, Hotkeys.ShortcutEx;
 
 type
 
@@ -36,13 +36,34 @@ implementation
 
 procedure TForm1.Button1Click(Sender: TObject);
 begin
-  if HotKey1.Hotkey <> 0 then
-    HotkeyManager.RegisterNotify(HotKey1.Hotkey, NotifyEvent);
+  if HotKey1.Hotkey = 0 then
+  begin
+    ShowMessage('No hotkey selected.');
+    Exit;
+  end;
+
+  if HotkeyManager.RegisterNotify(HotKey1.Hotkey, NotifyEvent) then
+  begin
+    ShowMessage('Hotkey registered: ' + ShortCutToText(HotKey1.Hotkey));
+    Button1.Enabled := False;
+    Button2.Enabled := True;
+    HotKey1.Enabled := False;
+  end
+  else
+    ShowMessage('Cannot register hotkey (global hotkeys need X11 and a free shortcut).');
 end;
 
 procedure TForm1.Button2Click(Sender: TObject);
 begin
-  HotkeyManager.UnregisterNotify(HotKey1.Hotkey)
+  if HotkeyManager.UnregisterNotify(HotKey1.Hotkey) then
+  begin
+    ShowMessage('Hotkey unregistered.');
+    Button1.Enabled := True;
+    Button2.Enabled := False;
+    HotKey1.Enabled := True;
+  end
+  else
+    ShowMessage('Cannot unregister hotkey.');
 end;
 
 procedure TForm1.NotifyEvent(Sender: TObject; ShortcutEx: TShortcutEx);
