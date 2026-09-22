@@ -13,7 +13,7 @@
       </SearchPaths>
     </CompilerOptions>
     <Version Major="1"/>
-    <Files Count="7">
+    <Files Count="9">
       <Item1>
         <Filename Value="visual\BCImageTab.pas"/>
         <HasRegisterProc Value="True"/>
@@ -46,6 +46,18 @@
         <Filename Value="library\platform\unix\Hotkeys.Manager.Platform.pas"/>
         <UnitName Value="Hotkeys.Manager.Platform"/>
       </Item7>
+      <Item8>
+        <Filename Value="visual\ShortcutGrabber.pas"/>
+        <HasRegisterProc Value="False"/>
+        <UnitName Value="ShortcutGrabber"/>
+        <HasResources Value="True"/>
+        <ResourceBaseClass Value="Form"/>
+      </Item8>
+      <Item9>
+        <Filename Value="visual\HotKeyEdit.pas"/>
+        <HasRegisterProc Value="True"/>
+        <UnitName Value="HotKeyEdit"/>
+      </Item9>
     </Files>
     <RequiredPkgs Count="2">
       <Item1>

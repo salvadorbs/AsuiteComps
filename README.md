@@ -11,7 +11,9 @@ Visual components (palette `ASuite Components`):
 |---|---|---|
 | `TBCImageTab` | `visual/BCImageTab.pas` | Toggle image button with group exclusivity (tab behavior), based on BGRAControls |
 | `TButtonedEdit` | `visual/buttonededit.pas` | Edit with optional left/right glyph buttons |
-| `THotKey` | `visual/HotKey.pas` | Hotkey capture control |
+| `THotKey` | `visual/HotKey.pas` | Low-level shortcut capture control (direct keyboard capture) |
+| `THotKeyEdit` | `visual/HotKeyEdit.pas` | Read-only buttoned edit for a shortcut; opens the grabber, right button clears/chooses |
+| `TfrmShortcutGrabber` | `visual/ShortcutGrabber.pas` | Modal "choose hotkey" dialog with Ctrl/Alt/Shift/Win toggle buttons |
 
 Libraries:
 
@@ -21,6 +23,136 @@ Libraries:
 | `library/Hotkeys.Manager.pas` | `TBaseHotkeyManager`: OS-independent global-hotkey list management |
 | `library/platform/win/Hotkeys.Manager.Platform.pas` | Windows implementation (`RegisterHotKey`) |
 | `library/platform/unix/Hotkeys.Manager.Platform.pas` | Unix implementation (X11 `XGrabKey`; GTK2/GTK3/Qt5/Qt6). Safely dormant when no X11 display exists (e.g. pure Wayland) |
+
+## Shortcut grabber
+
+`TfrmShortcutGrabber` and `THotKey` live in the same package and can be used
+together or independently.
+
+### `THotKey` (direct capture)
+
+`THotKey` is the low-level capture control: the shortcut is typed directly
+into it (`NoModifier` allows a bare key). It is also the capture engine used
+inside `TfrmShortcutGrabber`.
+
+```pascal
+HotKey1.OnChange := @HotKey1Change;
+HotKey1.NoModifier := False; // require at least one modifier
+```
+
+To pick a shortcut through the dialog, use `THotKeyEdit` (below) or open the
+dialog explicitly.
+
+### Standalone dialog
+
+```pascal
+var
+  Shortcut: TShortCut;
+begin
+  Shortcut := TfrmShortcutGrabber.Execute(Self, TextToShortCut(Edit1.Text));
+  if Shortcut <> 0 then
+    Edit1.Text := ShortCutToText(Shortcut);
+end;
+```
+
+A string-based overload is available too:
+
+```pascal
+Edit1.Text := TfrmShortcutGrabber.Execute(Self, Edit1.Text);
+```
+
+### Direct binding to a `THotKey`
+
+`TfrmShortcutGrabber.TargetHotKey` binds the dialog to a control: it starts
+from its `Hotkey` and writes the confirmed value back (firing its `OnChange`).
+
+```pascal
+Form := TfrmShortcutGrabber.Create(Self);
+try
+  Form.TargetHotKey := HotKey1;
+  if Form.ShowModal = mrOk then
+    // HotKey1.Hotkey is already updated
+    Caption := ShortCutToText(HotKey1.Hotkey);
+finally
+  Form.Free;
+end;
+```
+
+### `THotKeyEdit` (buttoned edit)
+
+`THotKeyEdit` is a `TButtonedEdit` descendant that shows a shortcut and opens
+the grabber on click. It reuses `TfrmShortcutGrabber`, so no wiring is needed:
+
+```pascal
+HotKeyEdit1.Hotkey := ShortCut(VK_F5, [ssCtrl]);   // read/write, Text in sync
+HotKeyEdit1.OnHotkeyChange := @HotKeyEdit1Change;  // fired when it changes
+```
+
+- clicking the edit opens the grabber;
+- the right button clears the shortcut, or opens the grabber when empty;
+- `ClearImageIndex` / `ChooseImageIndex` pick the right-button glyphs
+  (`RightButton.Images` supplies the image list);
+- `ButtonVisibleOnlyWithHotkey` hides the button when no shortcut is set;
+- `OnValidateHotkey` is forwarded to the grabber (otherwise
+  `ShortcutGrabberDefaults.OnValidateHotkey` applies).
+
+### Button images
+
+The four modifier buttons (`Ctrl`, `Alt`, `Shift`, `Win`) are fully
+customizable through `TPicture` properties:
+
+- `TfrmShortcutGrabber.Images` — per-instance images
+  (`Images.Ctrl`, `Images.Alt`, `Images.Shift`, `Images.WinKey`);
+- `ShortcutGrabberDefaults.Images` — process-wide images, used when the
+  per-instance picture is empty;
+- embedded defaults — Lazarus resources (`asuite_ctrl`, `asuite_alt`,
+  `asuite_shift`, `asuite_winkey`) shipped with the default ASuite theme.
+
+The application decides which images to use: the component never reads a
+theme folder by itself. Assign them however you prefer (`TPicture` handles
+file/stream loading and accepts any `TGraphic`):
+
+```pascal
+Grabber.Images.Ctrl.LoadFromFile('ctrl.png');
+Grabber.Images.Alt.Assign(MyPng);
+ShortcutGrabberDefaults.Images.WinKey.Clear; // fall back to the default
+```
+
+The lookup order is: per-instance `TPicture` → `ShortcutGrabberDefaults.Images`
+→ embedded Lazarus resource. Missing images never raise an error.
+
+The embedded defaults live in `visual/buttons/` (the four PNGs) and are
+compiled into `visual/ShortcutGrabber.lrs` by `lazres`:
+
+```bash
+cd visual
+lazres ShortcutGrabber.lrs buttons/asuite_ctrl.png buttons/asuite_alt.png \
+  buttons/asuite_shift.png buttons/asuite_winkey.png
+```
+
+### Process-wide defaults
+
+`ShortcutGrabberDefaults` (a `TShortcutGrabberDefaults` instance) configures
+the dialog for the whole application:
+
+```pascal
+var
+  Manager: TBaseHotkeyManager;
+begin
+  ShortcutGrabberDefaults.MessageNoKey        := '...';
+  ShortcutGrabberDefaults.MessageNoModifier   := '...';
+  ShortcutGrabberDefaults.MessageNotAvailable := '...';
+  ShortcutGrabberDefaults.Images.Ctrl.LoadFromFile('/path/to/theme/ctrl.png');
+
+  Manager := HotkeyManager; // from Hotkeys.Manager.Platform
+  ShortcutGrabberDefaults.OnValidateHotkey := Manager.IsHotkeyAvailable;
+end;
+```
+
+When `OnValidateHotkey` is assigned, the dialog refuses a shortcut already
+taken (returning `False` keeps the dialog open and shows the "not available"
+message). When it is `nil`, no check is performed, so the component stays
+independent from the global hotkey manager.
 
 ## Requirements
 
@@ -35,7 +167,7 @@ Libraries:
 
 ## Automated tests
 
-The `tests/` directory holds an FPCUnit suite (72 tests) covering every
+The `tests/` directory holds an FPCUnit suite (92 tests) covering every
 component, the hotkey manager logic and the platform managers:
 
 ```bash
@@ -53,6 +185,7 @@ Windows and Linux (GTK2/GTK3/Qt5/Qt6) at every push and pull request.
 
 - `samples/TButtonedEdit/` — demo project for `TButtonedEdit`
 - `samples/THotkeyManager/` — demo project for global hotkeys + `THotKey`
+  (direct capture, plus an explicit "Choose..." button opening the grabber)
 
 ## License
 

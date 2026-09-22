@@ -1,8 +1,9 @@
 # ASuiteComps automated tests
 
 FPCUnit test suite for the ASuiteComps package: all visual components
-(`THotKey`, `TButtonedEdit`, `TBCImageTab`), the `Hotkeys.Manager` /
-`Hotkeys.ShortcutEx` logic and the platform hotkey managers.
+(`THotKey`, `THotKeyEdit`, `TfrmShortcutGrabber`, `TButtonedEdit`,
+`TBCImageTab`), the `Hotkeys.Manager` / `Hotkeys.ShortcutEx` logic and the
+platform hotkey managers.
 
 ## Layout
 
@@ -11,7 +12,9 @@ FPCUnit test suite for the ASuiteComps package: all visual components
 | `AsuiteCompsTests.lpr` / `.lpi` | Console runner (exit code <> 0 on failure) |
 | `Tests.ShortcutEx.pas` | `Hotkeys.ShortcutEx` |
 | `Tests.HotkeysManager.pas` | `TBaseHotkeyManager` via a fake `DoRegister`/`DoUnregister` manager (no OS calls) |
-| `Tests.HotkeyControl.pas` | `THotKey` (incl. `KeyUp` capture logic via a cracker class) |
+| `Tests.HotkeyControl.pas` | `THotKey` (incl. `KeyUp` capture logic and `SetHotkeyValue` via a cracker class) |
+| `Tests.ShortcutGrabber.pas` | `TfrmShortcutGrabber` images, hotkey/button round-trip and `ShortcutGrabberDefaults` |
+| `Tests.HotKeyEdit.pas` | `THotKeyEdit` value/text sync, clear, events and right-button state |
 | `Tests.ButtonedEdit.pas` | `TButtonedEdit` properties, events and button options |
 | `Tests.BCImageTab.pas` | `TBCImageTab` toggle/group/exclusivity behavior |
 | `Tests.Platform.pas` | Platform manager smoke tests (singleton, constructor, display-independent API) |

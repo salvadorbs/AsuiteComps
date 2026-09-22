@@ -14,24 +14,20 @@ type
 
   TTestShortcutEx = class(TTestCase)
   published
-    procedure TestCreateSetsKeyAndShift;
-    procedure TestCreateNoModifiers;
-    procedure TestCreateCtrlAltShift;
-    procedure TestSimpleShortcutRoundTrip;
-    procedure TestSetShortcutUpdatesKeyAndShift;
-    procedure TestDefaultIndexAndTag;
-    procedure TestIndexTagWritable;
+    procedure TestCreateVariants;
+    procedure TestSimpleShortcut;
+    procedure TestIndexAndTag;
     procedure TestNotifyDefaultNil;
     procedure TestToText;
-    procedure TestZeroShortcut;
   end;
 
 implementation
 
-procedure TTestShortcutEx.TestCreateSetsKeyAndShift;
+procedure TTestShortcutEx.TestCreateVariants;
 var
   S: TShortcutEx;
 begin
+  //Ctrl
   S := TShortcutEx.Create(ShortCut(VK_A, [ssCtrl]));
   try
     AssertEquals('Key', Integer(VK_A), Integer(S.Key));
@@ -40,12 +36,8 @@ begin
   finally
     S.Free;
   end;
-end;
 
-procedure TTestShortcutEx.TestCreateNoModifiers;
-var
-  S: TShortcutEx;
-begin
+  //No modifiers
   S := TShortcutEx.Create(ShortCut(VK_F5, []));
   try
     AssertEquals('Key', Integer(VK_F5), Integer(S.Key));
@@ -53,12 +45,8 @@ begin
   finally
     S.Free;
   end;
-end;
 
-procedure TTestShortcutEx.TestCreateCtrlAltShift;
-var
-  S: TShortcutEx;
-begin
+  //Ctrl+Alt+Shift
   S := TShortcutEx.Create(ShortCut(VK_DELETE, [ssCtrl, ssAlt, ssShift]));
   try
     AssertEquals('Key', Integer(VK_DELETE), Integer(S.Key));
@@ -66,9 +54,19 @@ begin
   finally
     S.Free;
   end;
+
+  //Zero
+  S := TShortcutEx.Create(0);
+  try
+    AssertEquals('Key', 0, Integer(S.Key));
+    AssertTrue('Empty shift', S.ShiftState = []);
+    AssertEquals('SimpleShortcut', 0, Integer(S.SimpleShortcut));
+  finally
+    S.Free;
+  end;
 end;
 
-procedure TTestShortcutEx.TestSimpleShortcutRoundTrip;
+procedure TTestShortcutEx.TestSimpleShortcut;
 var
   S: TShortcutEx;
   Sc: TShortCut;
@@ -77,17 +75,7 @@ begin
   S := TShortcutEx.Create(Sc);
   try
     AssertEquals('RoundTrip', Integer(Sc), Integer(S.SimpleShortcut));
-  finally
-    S.Free;
-  end;
-end;
 
-procedure TTestShortcutEx.TestSetShortcutUpdatesKeyAndShift;
-var
-  S: TShortcutEx;
-begin
-  S := TShortcutEx.Create(ShortCut(VK_A, [ssCtrl]));
-  try
     S.SimpleShortcut := ShortCut(VK_B, [ssAlt, ssShift]);
     AssertEquals('Key', Integer(VK_B), Integer(S.Key));
     AssertTrue('Shift', S.ShiftState = TShiftState([ssAlt, ssShift]));
@@ -97,7 +85,7 @@ begin
   end;
 end;
 
-procedure TTestShortcutEx.TestDefaultIndexAndTag;
+procedure TTestShortcutEx.TestIndexAndTag;
 var
   S: TShortcutEx;
 begin
@@ -105,17 +93,7 @@ begin
   try
     AssertEquals('Default Index', -1, S.Index);
     AssertEquals('Default Tag', 0, S.Tag);
-  finally
-    S.Free;
-  end;
-end;
 
-procedure TTestShortcutEx.TestIndexTagWritable;
-var
-  S: TShortcutEx;
-begin
-  S := TShortcutEx.Create(ShortCut(VK_A, [ssCtrl]));
-  try
     S.Index := 42;
     S.Tag := 7;
     AssertEquals('Index', 42, S.Index);
@@ -145,20 +123,6 @@ begin
   try
     AssertEquals('ToText', ShortCutToText(ShortCut(VK_A, [ssCtrl])), S.ToText);
     AssertTrue('ToText not empty', S.ToText <> '');
-  finally
-    S.Free;
-  end;
-end;
-
-procedure TTestShortcutEx.TestZeroShortcut;
-var
-  S: TShortcutEx;
-begin
-  S := TShortcutEx.Create(0);
-  try
-    AssertEquals('Key', 0, Integer(S.Key));
-    AssertTrue('Empty shift', S.ShiftState = []);
-    AssertEquals('SimpleShortcut', 0, Integer(S.SimpleShortcut));
   finally
     S.Free;
   end;

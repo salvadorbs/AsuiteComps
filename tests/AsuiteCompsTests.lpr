@@ -11,11 +11,16 @@ program AsuiteCompsTests;
 {$mode objfpc}{$H+}
 
 uses
+  {$IFDEF UNIX}
+  cthreads,
+  {$ENDIF}
   Interfaces,
   consoletestrunner,
   Tests.ShortcutEx,
   Tests.HotkeysManager,
   Tests.HotkeyControl,
+  Tests.ShortcutGrabber,
+  Tests.HotKeyEdit,
   Tests.ButtonedEdit,
   Tests.BCImageTab,
   Tests.Platform;

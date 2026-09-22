@@ -30,6 +30,9 @@ type
 
   THKModifiers = set of THKModifier;
 
+  { Low-level shortcut capture control: the shortcut is always typed directly
+    into the control. To pick a shortcut through the modal dialog use
+    THotKeyEdit, which wraps TfrmShortcutGrabber. }
   THotKey = class(TCustomControl)
   private
     FHotkey: TShortCut;
@@ -58,6 +61,11 @@ type
     constructor Create(AOwner: TComponent); override;
     procedure Paint; override;
     procedure EditingDone; override;
+
+    { Sets Hotkey and, when ANotify is True, fires OnChange. Does nothing when
+      the value is unchanged. Used by TfrmShortcutGrabber when bound to this
+      control through TargetHotKey. }
+    procedure SetHotkeyValue(AValue: TShortCut; ANotify: Boolean = True);
   published        
     property Align;
     property Anchors;
@@ -161,6 +169,18 @@ begin
   if CanSetFocus then begin
     SetFocus;
   end;
+end;
+
+procedure THotKey.SetHotkeyValue(AValue: TShortCut; ANotify: Boolean);
+begin
+  if FHotkey = AValue then
+    Exit;
+
+  FHotkey := AValue;
+  Invalidate;
+
+  if ANotify and Assigned(FOnChange) then
+    FOnChange(Self);
 end;
 
 procedure THotKey.KeyDown(var Key: Word; Shift: TShiftState);

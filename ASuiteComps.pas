@@ -9,7 +9,8 @@ interface
 
 uses
   BCImageTab, ButtonedEdit, HotKey, Hotkeys.ShortcutEx, Hotkeys.Manager, 
-  Hotkeys.Manager.Platform, LazarusPackageIntf;
+  Hotkeys.Manager.Platform, ShortcutGrabber, 
+  HotKeyEdit, LazarusPackageIntf;
 
 implementation
 
@@ -18,6 +19,7 @@ begin
   RegisterUnit('BCImageTab', @BCImageTab.Register);
   RegisterUnit('ButtonedEdit', @ButtonedEdit.Register);
   RegisterUnit('HotKey', @HotKey.Register);
+  RegisterUnit('HotKeyEdit', @HotKeyEdit.Register);
 end;
 
 initialization

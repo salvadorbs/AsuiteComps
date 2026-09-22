@@ -6,7 +6,7 @@ interface
 
 uses
   Classes, SysUtils, Forms, Controls, Graphics, Dialogs, StdCtrls,
-  LCLProc, Hotkeys.Manager.Platform, HotKey, Hotkeys.ShortcutEx;
+  LCLProc, Hotkeys.Manager.Platform, HotKey, ShortcutGrabber, Hotkeys.ShortcutEx;
 
 type
 
@@ -17,8 +17,10 @@ type
     Button2: TButton;
     HotKey1: THotKey;
     Label1: TLabel;
+    btnChoose: TButton;
     procedure Button1Click(Sender: TObject);
     procedure Button2Click(Sender: TObject);
+    procedure btnChooseClick(Sender: TObject);
   private
     procedure NotifyEvent(Sender: TObject; ShortcutEx: TShortcutEx);
   public
@@ -66,10 +68,23 @@ begin
     ShowMessage('Cannot unregister hotkey.');
 end;
 
+procedure TForm1.btnChooseClick(Sender: TObject);
+var
+  NewHotkey: TShortCut;
+begin
+  //THotKey captures directly; the dialog is opened explicitly here (in a real
+  //app you would rather use THotKeyEdit, which opens it on click).
+  NewHotkey := TfrmShortcutGrabber.Execute(Self, HotKey1.Hotkey);
+  if NewHotkey <> 0 then
+  begin
+    HotKey1.SetHotkeyValue(NewHotkey);
+    ShowMessage('Selected: ' + ShortCutToText(HotKey1.Hotkey));
+  end;
+end;
+
 procedure TForm1.NotifyEvent(Sender: TObject; ShortcutEx: TShortcutEx);
 begin
   ShowMessage('You typed the shorcut ' + ShortcutEx.totext);
 end;
 
 end.
-

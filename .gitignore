@@ -48,3 +48,7 @@ lib/
 # FPCUnit test runner binary (built by tests/run_tests.sh)
 /tests/AsuiteCompsTests
 /tests/AsuiteCompsTests.exe
+
+# ShortcutGrabber default button images are source, not generated:
+# keep the embedded resource file despite the global *.lrs rule.
+!visual/ShortcutGrabber.lrs

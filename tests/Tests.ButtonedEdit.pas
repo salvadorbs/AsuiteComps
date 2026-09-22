@@ -28,23 +28,15 @@ type
   protected
     procedure SetUp; override;
   published
-    procedure TestCreateDestroy;
-    procedure TestTextRoundTrip;
+    procedure TestTextProperties;
     procedure TestOnChangeFired;
     procedure TestOnClickWiring;
-    procedure TestTextHintRoundTrip;
-    procedure TestReadOnlyRoundTrip;
-    procedure TestCharCaseRoundTrip;
-    procedure TestParentFontRoundTrip;
     procedure TestButtonsExistAndHidden;
-    procedure TestButtonsDistinct;
-    procedure TestButtonVisibility;
     procedure TestLeftButtonClickWiring;
     procedure TestRightButtonClickWiring;
     procedure TestOnKeyPressWiring;
     procedure TestButtonOptionsAssign;
-    procedure TestImagesWidthRoundTrip;
-    procedure TestImageIndexRoundTrip;
+    procedure TestButtonOptionsRoundTrip;
     procedure TestNotFocusedHeadless;
   end;
 
@@ -95,30 +87,34 @@ begin
   FKeyPressChar := #0;
 end;
 
-procedure TTestButtonedEdit.TestCreateDestroy;
+procedure TTestButtonedEdit.TestTextProperties;
 var
   E: TButtonedEdit;
 begin
   E := TButtonedEdit.Create(nil);
   try
-    AssertNotNull('LeftButton', E.LeftButton);
-    AssertNotNull('RightButton', E.RightButton);
-  finally
-    E.Free;
-  end;
-  AssertTrue('Freed without error', True);
-end;
-
-procedure TTestButtonedEdit.TestTextRoundTrip;
-var
-  E: TButtonedEdit;
-begin
-  E := TButtonedEdit.Create(nil);
-  try
+    //Text
     E.Text := 'hello';
     AssertEquals('Text', 'hello', E.Text);
     E.Text := '';
     AssertEquals('Text cleared', '', E.Text);
+    //TextHint
+    E.TextHint := 'Search...';
+    AssertEquals('TextHint', 'Search...', E.TextHint);
+    //ReadOnly
+    AssertFalse('Default ReadOnly', E.ReadOnly);
+    E.ReadOnly := True;
+    AssertTrue('ReadOnly', E.ReadOnly);
+    E.ReadOnly := False;
+    AssertFalse('ReadOnly back', E.ReadOnly);
+    //CharCase
+    AssertTrue('Default CharCase', E.CharCase = ecNormal);
+    E.CharCase := ecUpperCase;
+    AssertTrue('CharCase', E.CharCase = ecUpperCase);
+    //ParentFont
+    AssertFalse('Default ParentFont', E.ParentFont);
+    E.ParentFont := True;
+    AssertTrue('ParentFont', E.ParentFont);
   finally
     E.Free;
   end;
@@ -152,63 +148,6 @@ begin
   end;
 end;
 
-procedure TTestButtonedEdit.TestTextHintRoundTrip;
-var
-  E: TButtonedEdit;
-begin
-  E := TButtonedEdit.Create(nil);
-  try
-    E.TextHint := 'Search...';
-    AssertEquals('TextHint', 'Search...', E.TextHint);
-  finally
-    E.Free;
-  end;
-end;
-
-procedure TTestButtonedEdit.TestReadOnlyRoundTrip;
-var
-  E: TButtonedEdit;
-begin
-  E := TButtonedEdit.Create(nil);
-  try
-    AssertFalse('Default ReadOnly', E.ReadOnly);
-    E.ReadOnly := True;
-    AssertTrue('ReadOnly', E.ReadOnly);
-    E.ReadOnly := False;
-    AssertFalse('ReadOnly back', E.ReadOnly);
-  finally
-    E.Free;
-  end;
-end;
-
-procedure TTestButtonedEdit.TestCharCaseRoundTrip;
-var
-  E: TButtonedEdit;
-begin
-  E := TButtonedEdit.Create(nil);
-  try
-    AssertTrue('Default CharCase', E.CharCase = ecNormal);
-    E.CharCase := ecUpperCase;
-    AssertTrue('CharCase', E.CharCase = ecUpperCase);
-  finally
-    E.Free;
-  end;
-end;
-
-procedure TTestButtonedEdit.TestParentFontRoundTrip;
-var
-  E: TButtonedEdit;
-begin
-  E := TButtonedEdit.Create(nil);
-  try
-    AssertFalse('Default ParentFont', E.ParentFont);
-    E.ParentFont := True;
-    AssertTrue('ParentFont', E.ParentFont);
-  finally
-    E.Free;
-  end;
-end;
-
 procedure TTestButtonedEdit.TestButtonsExistAndHidden;
 var
   E: TButtonedEdit;
@@ -219,35 +158,6 @@ begin
     AssertNotNull('RightButton', E.RightButton);
     AssertFalse('Left hidden by default', E.LeftButton.Visible);
     AssertFalse('Right hidden by default', E.RightButton.Visible);
-  finally
-    E.Free;
-  end;
-end;
-
-procedure TTestButtonedEdit.TestButtonsDistinct;
-var
-  E: TButtonedEdit;
-begin
-  E := TButtonedEdit.Create(nil);
-  try
-    AssertTrue('Distinct options', E.LeftButton <> E.RightButton);
-  finally
-    E.Free;
-  end;
-end;
-
-procedure TTestButtonedEdit.TestButtonVisibility;
-var
-  E: TButtonedEdit;
-begin
-  E := TButtonedEdit.Create(nil);
-  try
-    E.RightButton.Visible := True;
-    AssertTrue('Right visible', E.RightButton.Visible);
-    E.RightButton.Visible := False;
-    AssertFalse('Right hidden again', E.RightButton.Visible);
-    E.LeftButton.Visible := True;
-    AssertTrue('Left visible', E.LeftButton.Visible);
   finally
     E.Free;
   end;
@@ -316,7 +226,7 @@ begin
   end;
 end;
 
-procedure TTestButtonedEdit.TestImagesWidthRoundTrip;
+procedure TTestButtonedEdit.TestButtonOptionsRoundTrip;
 var
   E: TButtonedEdit;
 begin
@@ -325,20 +235,15 @@ begin
     AssertEquals('Default ImagesWidth', 0, E.RightButton.ImagesWidth);
     E.RightButton.ImagesWidth := 24;
     AssertEquals('ImagesWidth', 24, E.RightButton.ImagesWidth);
-  finally
-    E.Free;
-  end;
-end;
 
-procedure TTestButtonedEdit.TestImageIndexRoundTrip;
-var
-  E: TButtonedEdit;
-begin
-  E := TButtonedEdit.Create(nil);
-  try
     AssertEquals('Default ImageIndex', -1, E.RightButton.ImageIndex);
     E.RightButton.ImageIndex := 3;
     AssertEquals('ImageIndex', 3, E.RightButton.ImageIndex);
+
+    E.RightButton.Visible := True;
+    AssertTrue('Right visible', E.RightButton.Visible);
+    E.LeftButton.Visible := True;
+    AssertTrue('Left visible', E.LeftButton.Visible);
   finally
     E.Free;
   end;

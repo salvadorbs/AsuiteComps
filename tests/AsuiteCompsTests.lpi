@@ -35,7 +35,7 @@
         <PackageName Value="LCL"/>
       </Item2>
     </RequiredPackages>
-    <Units Count="7">
+    <Units Count="9">
       <Unit0>
         <Filename Value="AsuiteCompsTests.lpr"/>
         <IsPartOfProject Value="True"/>
@@ -70,6 +70,16 @@
         <IsPartOfProject Value="True"/>
         <UnitName Value="Tests.Platform"/>
       </Unit6>
+      <Unit7>
+        <Filename Value="Tests.ShortcutGrabber.pas"/>
+        <IsPartOfProject Value="True"/>
+        <UnitName Value="Tests.ShortcutGrabber"/>
+      </Unit7>
+      <Unit8>
+        <Filename Value="Tests.HotKeyEdit.pas"/>
+        <IsPartOfProject Value="True"/>
+        <UnitName Value="Tests.HotKeyEdit"/>
+      </Unit8>
     </Units>
   </ProjectOptions>
   <CompilerOptions>

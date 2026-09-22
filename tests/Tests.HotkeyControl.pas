@@ -37,6 +37,9 @@ type
     procedure TestDeleteClears;
     procedure TestOnChangeFired;
     procedure TestOnChangeNotFiredWithoutInput;
+    procedure TestSetHotkeyValueNotifies;
+    procedure TestSetHotkeyValueNoNotify;
+    procedure TestSetHotkeyValueUnchanged;
   end;
 
 implementation
@@ -208,6 +211,51 @@ begin
     Key := VK_A;
     H.CallKeyUp(Key, []);
     AssertEquals('OnChange fired once', 1, FChanged);
+  finally
+    H.Free;
+  end;
+end;
+
+procedure TTestHotkeyControl.TestSetHotkeyValueNotifies;
+var
+  H: THotKeyCracker;
+begin
+  H := THotKeyCracker.Create(nil);
+  try
+    H.OnChange := @OnChanged;
+    H.SetHotkeyValue(ShortCut(VK_F5, [ssCtrl]), True);
+    AssertEquals('Hotkey set', Integer(ShortCut(VK_F5, [ssCtrl])), Integer(H.Hotkey));
+    AssertEquals('OnChange fired', 1, FChanged);
+  finally
+    H.Free;
+  end;
+end;
+
+procedure TTestHotkeyControl.TestSetHotkeyValueNoNotify;
+var
+  H: THotKeyCracker;
+begin
+  H := THotKeyCracker.Create(nil);
+  try
+    H.OnChange := @OnChanged;
+    H.SetHotkeyValue(ShortCut(VK_F5, [ssCtrl]), False);
+    AssertEquals('Hotkey set', Integer(ShortCut(VK_F5, [ssCtrl])), Integer(H.Hotkey));
+    AssertEquals('OnChange not fired', 0, FChanged);
+  finally
+    H.Free;
+  end;
+end;
+
+procedure TTestHotkeyControl.TestSetHotkeyValueUnchanged;
+var
+  H: THotKeyCracker;
+begin
+  H := THotKeyCracker.Create(nil);
+  try
+    H.SetHotkeyValue(ShortCut(VK_F5, [ssCtrl]), False);
+    H.OnChange := @OnChanged;
+    H.SetHotkeyValue(ShortCut(VK_F5, [ssCtrl]), True);
+    AssertEquals('OnChange not fired for same value', 0, FChanged);
   finally
     H.Free;
   end;
