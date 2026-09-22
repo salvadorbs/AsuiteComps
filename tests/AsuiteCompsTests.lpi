@@ -1,0 +1,106 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CONFIG>
+  <ProjectOptions>
+    <Version Value="11"/>
+    <PathDelim Value="\"/>
+    <General>
+      <SessionStorage Value="InProjectDir"/>
+      <MainUnit Value="0"/>
+      <Title Value="AsuiteCompsTests"/>
+      <Scaled Value="True"/>
+      <ResourceType Value="res"/>
+      <UseXPManifest Value="True"/>
+      <XPManifest>
+        <DpiAware Value="True"/>
+      </XPManifest>
+      <Icon Value="0"/>
+    </General>
+    <BuildModes Count="1">
+      <Item1 Name="Default" Default="True"/>
+    </BuildModes>
+    <PublishOptions>
+      <Version Value="2"/>
+      <UseFileFilters Value="True"/>
+    </PublishOptions>
+    <RunParams>
+      <FormatVersion Value="2"/>
+      <Modes Count="0"/>
+    </RunParams>
+    <RequiredPackages Count="2">
+      <Item1>
+        <PackageName Value="ASuiteComps"/>
+        <MinVersion Major="1" Valid="True"/>
+      </Item1>
+      <Item2>
+        <PackageName Value="LCL"/>
+      </Item2>
+    </RequiredPackages>
+    <Units Count="7">
+      <Unit0>
+        <Filename Value="AsuiteCompsTests.lpr"/>
+        <IsPartOfProject Value="True"/>
+      </Unit0>
+      <Unit1>
+        <Filename Value="Tests.ShortcutEx.pas"/>
+        <IsPartOfProject Value="True"/>
+        <UnitName Value="Tests.ShortcutEx"/>
+      </Unit1>
+      <Unit2>
+        <Filename Value="Tests.HotkeysManager.pas"/>
+        <IsPartOfProject Value="True"/>
+        <UnitName Value="Tests.HotkeysManager"/>
+      </Unit2>
+      <Unit3>
+        <Filename Value="Tests.HotkeyControl.pas"/>
+        <IsPartOfProject Value="True"/>
+        <UnitName Value="Tests.HotkeyControl"/>
+      </Unit3>
+      <Unit4>
+        <Filename Value="Tests.ButtonedEdit.pas"/>
+        <IsPartOfProject Value="True"/>
+        <UnitName Value="Tests.ButtonedEdit"/>
+      </Unit4>
+      <Unit5>
+        <Filename Value="Tests.BCImageTab.pas"/>
+        <IsPartOfProject Value="True"/>
+        <UnitName Value="Tests.BCImageTab"/>
+      </Unit5>
+      <Unit6>
+        <Filename Value="Tests.Platform.pas"/>
+        <IsPartOfProject Value="True"/>
+        <UnitName Value="Tests.Platform"/>
+      </Unit6>
+    </Units>
+  </ProjectOptions>
+  <CompilerOptions>
+    <Version Value="11"/>
+    <PathDelim Value="\"/>
+    <Target>
+      <Filename Value="AsuiteCompsTests"/>
+    </Target>
+    <SearchPaths>
+      <IncludeFiles Value="$(ProjOutDir)"/>
+      <UnitOutputDirectory Value="lib\$(TargetCPU)-$(TargetOS)-$(LCLWidgetType)"/>
+    </SearchPaths>
+    <Linking>
+      <Options>
+        <Win32>
+          <GraphicApplication Value="False"/>
+        </Win32>
+      </Options>
+    </Linking>
+  </CompilerOptions>
+  <Debugging>
+    <Exceptions Count="3">
+      <Item1>
+        <Name Value="EAbort"/>
+      </Item1>
+      <Item2>
+        <Name Value="ECodetoolError"/>
+      </Item2>
+      <Item3>
+        <Name Value="EFOpenError"/>
+      </Item3>
+    </Exceptions>
+  </Debugging>
+</CONFIG>

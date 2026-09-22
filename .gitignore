@@ -44,3 +44,7 @@ lib/
 *.app/
 
 # End of https://www.toptal.com/developers/gitignore/api/lazarus,freepascal
+
+# FPCUnit test runner binary (built by tests/run_tests.sh)
+/tests/AsuiteCompsTests
+/tests/AsuiteCompsTests.exe
