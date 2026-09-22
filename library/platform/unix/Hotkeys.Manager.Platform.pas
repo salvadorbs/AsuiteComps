@@ -241,6 +241,11 @@ var
   Key: Word;
   ShiftState: TShiftState;
 begin
+  //Global hotkeys require X11 (XGrabKey). On sessions without X11
+  //(e.g. pure Wayland) FDisplay is nil and registration is not possible.
+  if FDisplay = nil then
+    Exit(False);
+
   ShortCutToKey(AShortcut.SimpleShortcut, Key, ShiftState);
 
   Result := Key <> 0;
@@ -550,27 +555,19 @@ constructor TUnixHotkeyManager.Create;
 begin
   inherited Create;
 
+  //Do NOT use widgetset displays (GDK_WINDOW_XDISPLAY, QX11Info_display,
+  //QtWidgetSet.x11Display): they AV when the app runs on Wayland without X11
+  //(QX11Application native interface is nil). Probe X11 ourselves; global
+  //hotkeys need X11 anyway (XGrabKey), so without it the manager stays dormant.
+  FDisplay := XOpenDisplay(nil);
+
   {$IFDEF GTK}
-  FRoot := gdk_get_default_root_window;
-
-    {$IFDEF LCLGTK2}
-    FDisplay := GDK_WINDOW_XDISPLAY(FRoot);
-    {$ENDIF}
-
-    {$IFDEF LCLGTK3}
-    FDisplay := gdk_x11_display_get_xdisplay(gdk_window_get_display(FRoot));
-    {$ENDIF}
-
+  if FDisplay <> nil then
+    FRoot := gdk_get_default_root_window;
   {$ENDIF}
-                
-  {$IFDEF QT}
-    {$IFDEF LCLQT5}
-    FDisplay := QX11Info_display();
-    {$ENDIF}
 
-    {$IFDEF LCLQT6}
-    FDisplay := QtWidgetSet.x11Display;
-    {$ENDIF}
+  {$IFDEF QT}
+  if FDisplay <> nil then
     FQNativeEventFilter := QNativeEventFilter_hook_Create(QCoreApplication_instance());
   {$ENDIF}
 end;
