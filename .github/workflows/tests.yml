@@ -1,0 +1,143 @@
+name: ASuiteComps tests
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+env:
+  FPC_URL: 'gitlab'
+  FPC_BRANCH: 'release_3_2_2'
+  LAZ_URL: 'gitlab'
+  LAZ_BRANCH: 'lazarus_4_0'
+  LAZ_DIR: 'fpcLaz'
+  FPCUP_OPT: ''
+  COMPS_SOURCE: 'comps_src'
+  BGRA_BITMAP_REF: 'v11.6.6'
+  BGRA_CONTROLS_REF: 'v9.0.2'
+
+jobs:
+  test:
+    name: ${{ matrix.config.name }}
+
+    runs-on: ${{ matrix.config.os }}
+
+    defaults:
+      run:
+        shell: bash
+
+    strategy:
+      fail-fast: false
+      matrix:
+        config:
+
+          - os: windows-latest
+            name: 'Windows 64'
+            fpcup-url: 'https://github.com/LongDirtyAnimAlf/Reiniero-fpcup/releases/download/v2.4.0f/fpclazup-x86_64-win64.exe'
+            lazbuild: 'fpcLaz/lazarus/lazbuild.exe'
+            build-widgetset: 'win32'
+
+          - os: ubuntu-22.04
+            name: 'Linux 64 GTK2'
+            fpcup-url: 'https://github.com/LongDirtyAnimAlf/Reiniero-fpcup/releases/download/v2.4.0f/fpclazup-x86_64-linux'
+            lazbuild: 'fpcLaz/lazarus/lazbuild'
+            build-widgetset: 'gtk2'
+
+          - os: ubuntu-22.04
+            name: 'Linux 64 GTK3'
+            fpcup-url: 'https://github.com/LongDirtyAnimAlf/Reiniero-fpcup/releases/download/v2.4.0f/fpclazup-x86_64-linux'
+            lazbuild: 'fpcLaz/lazarus/lazbuild'
+            build-widgetset: 'gtk3'
+
+          - os: ubuntu-22.04
+            name: 'Linux 64 QT5'
+            fpcup-url: 'https://github.com/LongDirtyAnimAlf/Reiniero-fpcup/releases/download/v2.4.0f/fpclazup-x86_64-linux'
+            lazbuild: 'fpcLaz/lazarus/lazbuild'
+            build-widgetset: 'qt5'
+
+          - os: ubuntu-22.04
+            name: 'Linux 64 QT6'
+            fpcup-url: 'https://github.com/LongDirtyAnimAlf/Reiniero-fpcup/releases/download/v2.4.0f/fpclazup-x86_64-linux'
+            lazbuild: 'fpcLaz/lazarus/lazbuild'
+            build-widgetset: 'qt6'
+
+    steps:
+    - uses: actions/checkout@v6
+      with:
+        path: '${{ env.COMPS_SOURCE }}'
+
+    - name: Install Dependencies (Ubuntu - common)
+      if: startsWith(matrix.config.os, 'ubuntu')
+      run: |
+        sudo apt-get update
+        sudo apt-get -m -y install xvfb
+
+    - name: Install Dependencies (Ubuntu - only GTK2)
+      if: matrix.config.build-widgetset == 'gtk2'
+      run: |
+        sudo apt-get update
+        sudo apt-get -m -y install libgtk2.0-dev libpango1.0-dev libffi-dev libxtst-dev
+
+    - name: Install Dependencies (Ubuntu - only GTK3)
+      if: matrix.config.build-widgetset == 'gtk3'
+      run: sudo apt-get -m -y install libgtk-3-dev
+
+    - name: Install Dependencies (Ubuntu - only QT5)
+      if: matrix.config.build-widgetset == 'qt5'
+      run: |
+        wget https://github.com/davidbannon/libqt5pas/releases/download/v1.2.16/libqt5pas1_2.16-4_amd64.deb
+        wget https://github.com/davidbannon/libqt5pas/releases/download/v1.2.16/libqt5pas-dev_2.16-4_amd64.deb
+        sudo apt-get update
+        sudo apt-get -m -y install qt5-qmake qtbase5-dev libqt5x11extras5-dev libxcb-keysyms1-dev
+        sudo apt-get -m -y install ./libqt5pas1_2.16-4_amd64.deb
+        sudo apt-get -m -y install ./libqt5pas-dev_2.16-4_amd64.deb
+
+    - name: Install Dependencies (Ubuntu - only QT6)
+      if: matrix.config.build-widgetset == 'qt6'
+      run: |
+        wget https://github.com/davidbannon/libqt6pas/releases/download/v6.2.10/libqt6pas6_6.2.10-1_amd64.deb
+        wget https://github.com/davidbannon/libqt6pas/releases/download/v6.2.10/libqt6pas6-dev_6.2.10-1_amd64.deb
+        sudo apt-get update
+        sudo apt-get -m -y install qt6-base-dev libxcb-keysyms1-dev libgl-dev qt6-base-private-dev
+        sudo apt-get -m -y install ./libqt6pas6_6.2.10-1_amd64.deb
+        sudo apt-get -m -y install ./libqt6pas6-dev_6.2.10-1_amd64.deb
+
+    - name: Generate Cache Hash
+      run: echo "${{ matrix.config.fpcup-url }}${{ env.FPCUP_OPT }}${{ env.FPC_URL }}${{ env.FPC_BRANCH }}${{ env.LAZ_URL }}${{ env.LAZ_BRANCH }}${{ matrix.config.name }}" > .cache
+
+    - name: Cache
+      id: cache
+      uses: actions/cache@v4.3.0
+      env:
+        cache-name: cache-laz-asuitecomps-v1
+      with:
+        path: |
+          ${{ env.LAZ_DIR }}
+          thirdparty
+        key: ${{ runner.os }}-${{ env.cache-name }}_${{ matrix.config.build-widgetset }}-${{ hashFiles('.cache') }}
+
+    - name: Install Lazarus
+      if: steps.cache.outputs.cache-hit != 'true'
+      run: |
+        curl --retry 5 -L -o fpcup ${{ matrix.config.fpcup-url }}
+        chmod +x fpcup
+        mkdir ${{ env.LAZ_DIR }}
+        ./fpcup --installdir=${{ env.LAZ_DIR }} --fpcURL=${{ env.FPC_URL }} --fpcBranch=${{ env.FPC_BRANCH }} --lazURL=${{ env.LAZ_URL }} --lazBranch=${{ env.LAZ_BRANCH }} ${{ env.FPCUP_OPT }} --only=docker --noconfirm --verbose
+
+    - name: Install Lazarus Packages
+      if: steps.cache.outputs.cache-hit != 'true'
+      run: |
+        git clone --depth 1 --branch ${{ env.BGRA_BITMAP_REF }} https://github.com/bgrabitmap/bgrabitmap.git thirdparty/bgrabitmap
+        git clone --depth 1 --branch ${{ env.BGRA_CONTROLS_REF }} https://github.com/bgrabitmap/bgracontrols.git thirdparty/bgracontrols
+        "${{ matrix.config.lazbuild }}" --add-package-link thirdparty/bgrabitmap/bgrabitmap/bgrabitmappack.lpk --skip-dependencies -q
+        "${{ matrix.config.lazbuild }}" --add-package thirdparty/bgracontrols/bgracontrols.lpk --skip-dependencies -q
+        "${{ matrix.config.lazbuild }}" --add-package-link "${{ env.COMPS_SOURCE }}/ASuiteComps.lpk" --skip-dependencies -q
+
+    - name: Validate Cache
+      if: steps.cache.outputs.cache-hit == 'true'
+      run: ${{ matrix.config.lazbuild }} --version
+
+    - name: Build & run tests
+      run: |
+        chmod +x "${{ env.COMPS_SOURCE }}/tests/run_tests.sh"
+        "${{ env.COMPS_SOURCE }}/tests/run_tests.sh" --lazbuild="${{ matrix.config.lazbuild }}" --widgetset=${{ matrix.config.build-widgetset }}
