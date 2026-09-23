@@ -10,7 +10,7 @@ Visual components (palette `ASuite Components`):
 | Component | Unit | Description |
 |---|---|---|
 | `TBCImageTab` | `visual/BCImageTab.pas` | Toggle image button with group exclusivity (tab behavior), based on BGRAControls |
-| `TButtonedEdit` | `visual/buttonededit.pas` | Edit with optional left/right glyph buttons |
+| `TButtonedEdit` | `visual/buttonededit.pas` | Edit with optional left/right glyph buttons (`MaxLength`, `PasswordChar`, `Alignment`, `OnEnter`/`OnExit`) |
 | `THotKey` | `visual/HotKey.pas` | Low-level shortcut capture control (direct keyboard capture) |
 | `THotKeyEdit` | `visual/HotKeyEdit.pas` | Read-only buttoned edit for a shortcut; opens the grabber, right button clears/chooses |
 | `TfrmShortcutGrabber` | `visual/ShortcutGrabber.pas` | Modal "choose hotkey" dialog with Ctrl/Alt/Shift/Win toggle buttons |
@@ -21,8 +21,8 @@ Libraries:
 |---|---|
 | `library/Hotkeys.ShortcutEx.pas` | `TShortcutEx`: shortcut value object (key, modifiers, tag, notify callback) |
 | `library/Hotkeys.Manager.pas` | `TBaseHotkeyManager`: OS-independent global-hotkey list management |
-| `library/platform/win/Hotkeys.Manager.Platform.pas` | Windows implementation (`RegisterHotKey`) |
-| `library/platform/unix/Hotkeys.Manager.Platform.pas` | Unix implementation (X11 `XGrabKey`; GTK2/GTK3/Qt5/Qt6). Safely dormant when no X11 display exists (e.g. pure Wayland) |
+| `library/platform/win/Hotkeys.Manager.Platform.pas` | Windows implementation (`RegisterHotKey`, one message window per manager) |
+| `library/platform/unix/Hotkeys.Manager.Platform.pas` | Unix implementation (X11 `XGrabKey`; GTK2/GTK3/Qt5/Qt6). `IsHotkeyAvailable` probes X11; safely dormant when no X11 display exists (e.g. pure Wayland) |
 
 ## Shortcut grabber
 
@@ -134,8 +134,10 @@ Changing a picture reloads the corresponding button automatically
 The lookup order is: per-instance `TPicture` → `ShortcutGrabberDefaults.Images`
 → embedded Lazarus resource. Missing images never raise an error.
 
-The embedded defaults live in `visual/buttons/` (the four PNGs) and are
-compiled into `visual/ShortcutGrabber.lrs` by `lazres`:
+At runtime only the compiled resource `visual/ShortcutGrabber.lrs` is used.
+`visual/buttons/` keeps the four source PNGs (byte-identical to the default
+ASuite theme) so the `.lrs` can be regenerated from this repository alone
+with `lazres`:
 
 ```bash
 cd visual
@@ -183,7 +185,7 @@ independent from the global hotkey manager.
 
 ## Automated tests
 
-The `tests/` directory holds an FPCUnit suite (108 tests) covering every
+The `tests/` directory holds an FPCUnit suite (116 tests) covering every
 component, the hotkey manager logic and the platform managers:
 
 ```bash

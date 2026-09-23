@@ -35,30 +35,35 @@ jobs:
             name: 'Windows 64'
             fpcup-url: 'https://github.com/LongDirtyAnimAlf/Reiniero-fpcup/releases/download/v2.4.0f/fpclazup-x86_64-win64.exe'
             lazbuild: 'fpcLaz/lazarus/lazbuild.exe'
+            fpc-bin: 'x86_64-win64'
             build-widgetset: 'win32'
 
           - os: ubuntu-22.04
             name: 'Linux 64 GTK2'
             fpcup-url: 'https://github.com/LongDirtyAnimAlf/Reiniero-fpcup/releases/download/v2.4.0f/fpclazup-x86_64-linux'
             lazbuild: 'fpcLaz/lazarus/lazbuild'
+            fpc-bin: 'x86_64-linux'
             build-widgetset: 'gtk2'
 
           - os: ubuntu-22.04
             name: 'Linux 64 GTK3'
             fpcup-url: 'https://github.com/LongDirtyAnimAlf/Reiniero-fpcup/releases/download/v2.4.0f/fpclazup-x86_64-linux'
             lazbuild: 'fpcLaz/lazarus/lazbuild'
+            fpc-bin: 'x86_64-linux'
             build-widgetset: 'gtk3'
 
           - os: ubuntu-22.04
             name: 'Linux 64 QT5'
             fpcup-url: 'https://github.com/LongDirtyAnimAlf/Reiniero-fpcup/releases/download/v2.4.0f/fpclazup-x86_64-linux'
             lazbuild: 'fpcLaz/lazarus/lazbuild'
+            fpc-bin: 'x86_64-linux'
             build-widgetset: 'qt5'
 
           - os: ubuntu-22.04
             name: 'Linux 64 QT6'
             fpcup-url: 'https://github.com/LongDirtyAnimAlf/Reiniero-fpcup/releases/download/v2.4.0f/fpclazup-x86_64-linux'
             lazbuild: 'fpcLaz/lazarus/lazbuild'
+            fpc-bin: 'x86_64-linux'
             build-widgetset: 'qt6'
 
     steps:
@@ -70,7 +75,7 @@ jobs:
       if: startsWith(matrix.config.os, 'ubuntu')
       run: |
         sudo apt-get update
-        sudo apt-get -m -y install xvfb
+        sudo apt-get -m -y install xvfb libdbus-1-dev
 
     - name: Install Dependencies (Ubuntu - only GTK2)
       if: matrix.config.build-widgetset == 'gtk2'
@@ -114,7 +119,12 @@ jobs:
         path: |
           ${{ env.LAZ_DIR }}
           thirdparty
-        key: ${{ runner.os }}-${{ env.cache-name }}_${{ matrix.config.build-widgetset }}-${{ hashFiles('.cache') }}
+        key: ${{ runner.os }}-${{ env.cache-name }}_${{ matrix.config.build-widgetset }}-${{ hashFiles('.cache') }}-${{ hashFiles(format('{0}/ASuiteComps.lpk', env.COMPS_SOURCE), '.github/workflows/tests.yml') }}
+
+    - name: Add FPC to PATH
+      # fpcup installs FPC outside PATH: add it so lazbuild/fppkg can find it
+      # (otherwise "InitializeFppkg failed: Could not find a fpc executable").
+      run: echo "${GITHUB_WORKSPACE}/${{ env.LAZ_DIR }}/fpc/bin/${{ matrix.config.fpc-bin }}" >> "$GITHUB_PATH"
 
     - name: Install Lazarus
       if: steps.cache.outputs.cache-hit != 'true'

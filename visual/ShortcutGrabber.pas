@@ -40,6 +40,15 @@ const
   SHORTCUT_SHIFT_RES   = 'asuite_shift';
   SHORTCUT_WINKEY_RES  = 'asuite_winkey';
 
+resourcestring
+  { Default messages used by TShortcutGrabberDefaults. They are resource
+    strings so an application or a translation tool can replace them. }
+  SShortcutNoKey        = 'You haven''t selected any key!';
+  SShortcutNoModifier   = 'You haven''t selected any modifier keys!';
+  SShortcutNotAvailable =
+    'This hotkey is being used already by another software or by the ' +
+    'system itself. Please choose another one.';
+
 type
   { Optional validator used by the dialog to reject a shortcut already taken
     by another application or by the system. Returning False keeps the dialog
@@ -307,10 +316,9 @@ begin
   inherited Create;
   FImages := TShortcutGrabberImages.Create;
 
-  FMessageNoKey        := 'You haven''t selected any key!';
-  FMessageNoModifier   := 'You haven''t selected any modifier keys!';
-  FMessageNotAvailable := 'This hotkey is being used already by another ' +
-    'software or by the system itself. Please choose another one.';
+  FMessageNoKey        := SShortcutNoKey;
+  FMessageNoModifier   := SShortcutNoModifier;
+  FMessageNotAvailable := SShortcutNotAvailable;
 end;
 
 destructor TShortcutGrabberDefaults.Destroy;
@@ -531,7 +539,7 @@ begin
   btnCtrl.Pressed   := ssCtrl in AMod;
   btnShift.Pressed  := ssShift in AMod;
   btnAlt.Pressed    := ssAlt in AMod;
-  btnWinKey.Pressed := ssMeta in AMod;
+  btnWinKey.Pressed := (ssMeta in AMod) or (ssSuper in AMod);
 end;
 
 procedure TfrmShortcutGrabber.SetHotkey(AValue: TShortCut);
@@ -593,6 +601,7 @@ procedure TfrmShortcutGrabber.ApplyImageToButton(AButton: TBCImageButton;
 var
   Stream: TStream;
   Res: TLazarusResourceStream;
+  NewBitmap: TBGRABitmap;
 begin
   Stream := nil;
   Res := nil;
@@ -620,8 +629,19 @@ begin
       end;
     end;
 
+    //An invalid/unsupported image must not raise nor destroy a working
+    //bitmap: on failure the button keeps whatever it had.
+    NewBitmap := nil;
     if Stream <> nil then
-      ReplaceButtonBitmap(AButton, TBGRABitmap.Create(Stream));
+    begin
+      try
+        NewBitmap := TBGRABitmap.Create(Stream);
+      except
+        NewBitmap := nil;
+      end;
+    end;
+    if NewBitmap <> nil then
+      ReplaceButtonBitmap(AButton, NewBitmap);
   finally
     Res.Free;
     Stream.Free;
@@ -651,7 +671,6 @@ begin
       Form.OnValidateHotkey := AValidate;
 
     Form.Hotkey := AInitialHotkey;
-    Form.LoadImages;
 
     if Form.ShowModal = mrOk then
     begin

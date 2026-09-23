@@ -37,11 +37,12 @@ type
 
   TWin32HotkeyManager = class(TBaseHotkeyManager)
   private
-    FWindowClassAtom: ATOM;
-    FWindowClassInfo: WNDCLASSEX;
+    FWindow: HWND;
+    FWindowClassInfo: WNDCLASSEXW;
+    FWindowClassRegistered: Boolean;
 
-    function CreateAppWindow: boolean;
-    function RegisterWindowClass: boolean;
+    function CreateAppWindow: Boolean;
+    function RegisterWindowClass: Boolean;
     procedure SeparateHotKey(HotKey: Cardinal; var Modifiers, Key: Word);
   protected
     function DoRegister(Shortcut: TShortCutEx): Boolean; override;
@@ -51,17 +52,24 @@ type
     destructor Destroy; override;
 
     function IsHotkeyAvailable(Shortcut: TShortCut): Boolean; override;
+
+    { Message-only window that receives WM_HOTKEY (0 when creation failed).
+      Mostly for diagnostics. }
+    property Window: HWND read FWindow;
   end;
 
 { Returns the global hotkey manager instance }
 function HotkeyManager: TBaseHotkeyManager;
 
-var
-  HWindow: HWND;
-
 const
   WinClassName: string = 'TWin32HotkeyApp';
   HotKeyAtomPrefix: string = 'TWin32Hotkey';
+
+var
+  { The window class is process-wide: keep it registered as long as at least
+    one manager is alive (the tests, for instance, create a direct instance
+    next to the singleton). }
+  WindowClassRefCount: Integer = 0;
 
 implementation
 
@@ -84,18 +92,23 @@ begin
   case uMsg of
     WM_HOTKEY:
       begin
-        Capture := TWin32HotkeyManager(GetWindowLongPtr(HWindow, GWL_USERDATA));
-        I := Capture.FindHotkeyByIndex(Longint(wp));
-
-        if I > -1 then
+        // The manager is stored on the window itself: two managers can
+        // coexist without sharing a global handle.
+        Capture := TWin32HotkeyManager(GetWindowLongPtr(hw, GWL_USERDATA));
+        if Capture <> nil then
         begin
-          H := Capture[I];
-          if Assigned(H.Notify) then
-            H.Notify(Capture, H);
+          I := Capture.FindHotkeyByIndex(Longint(wp));
+
+          if I > -1 then
+          begin
+            H := Capture[I];
+            if Assigned(H.Notify) then
+              H.Notify(Capture, H);
+          end;
         end;
       end
   else
-    Result := DefWindowProc(hw, uMsg, wp, lp);
+    Result := DefWindowProcW(hw, uMsg, wp, lp);
   end;
 end;
 
@@ -103,7 +116,7 @@ end;
 
 procedure TWin32HotkeyManager.SeparateHotKey(HotKey: Cardinal; var Modifiers, Key: Word);
 // Separate key and modifiers, so they can be used with RegisterHotKey
-const                       
+const
   VK2_META    =  16;
   VK2_SHIFT   =  32;
   VK2_CONTROL =  64;
@@ -117,7 +130,7 @@ begin
   Key := Byte(HotKey);
   x := HotKey shr 8;
   Virtuals := x;
-  V := 0;     
+  V := 0;
   if (Virtuals and VK2_META) <> 0 then
     Inc(V, MOD_WIN);
   if (Virtuals and VK2_WIN) <> 0 then
@@ -131,9 +144,10 @@ begin
   Modifiers := V;
 end;
 
-function TWin32HotkeyManager.RegisterWindowClass: boolean;
+function TWin32HotkeyManager.RegisterWindowClass: Boolean;
 begin
-  FWindowClassInfo.cbSize := sizeof(FWindowClassInfo);
+  FillChar(FWindowClassInfo, SizeOf(FWindowClassInfo), 0);
+  FWindowClassInfo.cbSize := SizeOf(FWindowClassInfo);
   FWindowClassInfo.Style := 0;
   FWindowClassInfo.lpfnWndProc := @WinProc;
   FWindowClassInfo.cbClsExtra := 0;
@@ -143,89 +157,141 @@ begin
   FWindowClassInfo.hCursor := 0;
   FWindowClassInfo.hbrBackground := 0;
   FWindowClassInfo.lpszMenuName := nil;
-  FWindowClassInfo.lpszClassName := PAnsiChar(WinClassName);
+  FWindowClassInfo.lpszClassName := PChar(WinClassName);
   FWindowClassInfo.hIconSm := 0;
-  FWindowClassAtom := RegisterClassEx(FWindowClassInfo);
-  Result := FWindowClassAtom <> 0;
+  Result := RegisterClassExW(FWindowClassInfo) <> 0;
+  if not Result and (GetLastError = ERROR_CLASS_ALREADY_EXISTS) then
+    Result := True; // already registered by another instance in this process
+  if Result then
+  begin
+    FWindowClassRegistered := True;
+    Inc(WindowClassRefCount);
+  end;
 end;
 
-function TWin32HotkeyManager.CreateAppWindow: boolean;
+function TWin32HotkeyManager.CreateAppWindow: Boolean;
 begin
-  Result := false;
+  Result := False;
+
+  if FWindow <> 0 then
+    Exit(True);
 
   if not RegisterWindowClass then
-    exit;
+    Exit;
 
-  HWindow := CreateWindowEx(WS_EX_NOACTIVATE or WS_EX_TRANSPARENT,
-    PAnsiChar(WinClassName), PAnsiChar(WinClassName), Ws_popup or WS_CLIPSIBLINGS, 0, 0,
-    0, 0, 0, 0, hInstance, nil);
+  FWindow := CreateWindowExW(WS_EX_NOACTIVATE or WS_EX_TRANSPARENT,
+    PChar(WinClassName), PChar(WinClassName), WS_POPUP or WS_CLIPSIBLINGS,
+    0, 0, 0, 0, 0, 0, hInstance, nil);
 
-  if HWindow <> 0 then
+  if FWindow <> 0 then
   begin
-    ShowWindow(HWindow, SW_HIDE);
-    SetWindowLongPtr(HWindow, GWL_USERDATA, PtrInt(Self));
-
-    UpdateWindow(HWindow);
+    ShowWindow(FWindow, SW_HIDE);
+    SetWindowLongPtr(FWindow, GWL_USERDATA, PtrInt(Self));
+    UpdateWindow(FWindow);
     Result := True;
-    exit;
   end;
 end;
 
 function TWin32HotkeyManager.DoRegister(Shortcut: TShortCutEx): Boolean;
 var
   Key, Modifiers: Word;
-  id: Integer;
+  AtomId: ATOM;
 begin
+  Result := False;
+
+  if (Shortcut = nil) or (FWindow = 0) then
+    Exit;
+
   SeparateHotKey(Shortcut.SimpleShortcut, Modifiers, Key);
+  if Key = 0 then
+    Exit;
 
-  id := GlobalAddAtomW(PChar(HotKeyAtomPrefix + IntToStr(Shortcut.SimpleShortcut)));
-  Result := RegisterHotKey(HWindow, Longint(id), Modifiers, Key);
+  AtomId := GlobalAddAtomW(PChar(HotKeyAtomPrefix + IntToStr(Shortcut.SimpleShortcut)));
+  if AtomId = 0 then
+    Exit;
 
+  Result := RegisterHotKey(FWindow, Longint(AtomId), Modifiers, Key);
   if Result then
-    Shortcut.Index := id;
+    Shortcut.Index := AtomId
+  else
+    // Registration failed: do not leak the atom.
+    GlobalDeleteAtom(AtomId);
 end;
 
 function TWin32HotkeyManager.DoUnregister(Shortcut: TShortCutEx): Boolean;
 var
-  I, Index: Integer;
-begin                                
-  I := FindHotkey(Shortcut.SimpleShortcut);
-  Index := Self[I].Index;
+  AtomId: ATOM;
+begin
+  Result := False;
 
-  Result := UnRegisterHotkey(HWindow, Longint(Index));
-  GlobalDeleteAtom(Index);
+  if (Shortcut = nil) or (FWindow = 0) then
+    Exit;
+
+  AtomId := ATOM(Shortcut.Index);
+  if AtomId = 0 then
+    Exit(True); // nothing was registered for this item
+
+  Result := UnRegisterHotkey(FWindow, Longint(AtomId));
+  GlobalDeleteAtom(AtomId);
+  Shortcut.Index := 0;
 end;
 
 constructor TWin32HotkeyManager.Create;
 begin
-  inherited Create;    
+  inherited Create;
 
   CreateAppWindow;
 end;
 
 destructor TWin32HotkeyManager.Destroy;
-begin             
-  DestroyWindow(HWindow);
-
+begin
+  // Unregister the hotkeys while the message window is still alive, then
+  // destroy the window and release the window class.
   inherited Destroy;
+
+  if FWindow <> 0 then
+  begin
+    DestroyWindow(FWindow);
+    FWindow := 0;
+  end;
+
+  if FWindowClassRegistered then
+  begin
+    FWindowClassRegistered := False;
+    Dec(WindowClassRefCount);
+    if WindowClassRefCount <= 0 then
+    begin
+      WindowClassRefCount := 0;
+      UnregisterClassW(PChar(WinClassName), hInstance);
+    end;
+  end;
 end;
 
 function TWin32HotkeyManager.IsHotkeyAvailable(Shortcut: TShortCut): Boolean;
 var
   Modifiers, Key: Word;
-  WasRegistered: boolean;
-  ATOM: Word;
+  AtomId: ATOM;
 begin
-  Key := 0;
-  Modifiers := 0;
-  ATOM := GlobalAddAtomW(PChar(HotKeyAtomPrefix + IntToStr(Shortcut)));
+  Result := False;
+
+  if (Shortcut = 0) or (FWindow = 0) then
+    Exit;
+
   SeparateHotKey(Shortcut, Modifiers, Key);
+  if Key = 0 then
+    Exit;
 
-  Result := RegisterHotKey(HWindow, ATOM, Modifiers, Key);
-  if Result then
-    UnRegisterHotkey(HWindow, ATOM);
+  AtomId := GlobalAddAtomW(PChar(HotKeyAtomPrefix + IntToStr(Shortcut)));
+  if AtomId = 0 then
+    Exit;
 
-  GlobalDeleteAtom(ATOM);
+  try
+    Result := RegisterHotKey(FWindow, Longint(AtomId), Modifiers, Key);
+    if Result then
+      UnRegisterHotkey(FWindow, Longint(AtomId));
+  finally
+    GlobalDeleteAtom(AtomId);
+  end;
 end;
 
 end.

@@ -43,6 +43,7 @@ type
     procedure TestCaptureNoModifierKeepsPlainKey;
     procedure TestCaptureClearKey;
     procedure TestCaptureShiftKept;
+    procedure TestCaptureSuperBecomesMeta;
   end;
 
 implementation
@@ -285,6 +286,22 @@ begin
   try
     C.Capture(VK_F5, [ssShift]);
     AssertEquals('Shift kept', Integer(ShortCut(VK_F5, [ssShift])), Integer(C.Hotkey));
+  finally
+    C.Free;
+  end;
+end;
+
+procedure TTestHotkeyControl.TestCaptureSuperBecomesMeta;
+var
+  C: TShortcutCapture;
+begin
+  { LCL TShortCut cannot represent ssSuper: it must be folded to ssMeta
+    instead of being dropped (which would leave a bare key). }
+  C := TShortcutCapture.Create;
+  try
+    C.Capture(VK_T, [ssSuper]);
+    AssertEquals('Super folded to Meta',
+      Integer(ShortCut(VK_T, [ssMeta])), Integer(C.Hotkey));
   finally
     C.Free;
   end;

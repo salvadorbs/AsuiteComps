@@ -33,7 +33,7 @@ unit Hotkeys.Manager.Platform;
 interface
 
 uses
-  X, XLib, KeySym, Hotkeys.Manager, Hotkeys.ShortcutEx, Hotkeys.Manager.Portal,
+  X, XLib, KeySym, ctypes, Hotkeys.Manager, Hotkeys.ShortcutEx, Hotkeys.Manager.Portal,
   LCLType, Menus, LCLProc, Classes, sysutils, ExtCtrls
 
   {$IFDEF LCLGTK2}
@@ -53,7 +53,7 @@ uses
   {$ENDIF}
 
   {$IFDEF QT}
-  , xcb, qtint
+  , qtint
   {$ENDIF};
 
 type
@@ -148,7 +148,25 @@ const
   NumLock = Mod2Mask;
   NotLock = Integer(not (CapLock or NumLock));
 
+  { Minimal XCB key-press layout, read straight from the native Qt event
+    message (xcb_key_press_event_t). Only the fields needed to identify a
+    key press are used, so the xcb binding unit is not required. }
+  XCB_KEY_PRESS = 2;
+  XCB_KEY_DETAIL_OFS = 1;  // keycode
+  XCB_KEY_STATE_OFS = 28;  // modifier state (uint16)
+  XCB_EVENT_TYPE_MASK = $7F;
+
 implementation
+
+var
+  { Set by HookXErrorHandler while a temporary X11 probe is running. }
+  HookXError: Boolean = False;
+
+function HookXErrorHandler(para1: PDisplay; para2: PXErrorEvent): cint; cdecl;
+begin
+  HookXError := True;
+  Result := 0;
+end;
 
 function InternalFilterKeys(Self: TUnixHotkeyManager; KeyCode: Cardinal; KeyState: Cardinal): Boolean;
 var
@@ -278,6 +296,8 @@ begin
     if KeySym = 0 then
       Exit(False); // key the X11 backend cannot express
     KeyCode := XKeysymToKeycode(FDisplay, KeySym);
+    if KeyCode = 0 then
+      Exit(False); // key not present in the current keyboard mapping
 
     {$IFDEF LCLGTK2}
     Window := gdk_x11_drawable_get_xid(FRoot);
@@ -301,11 +321,13 @@ begin
     if (ShiftSym <> 0) and (KeySym <> ShiftSym) then
     begin
       KeyCode := XKeysymToKeycode(FDisplay, ShiftSym);
-
-      if ARegister then
-        CaptureKey(FDisplay, KeyCode, Modifier, Window)
-      else
-        ReleaseKey(FDisplay, KeyCode, Modifier, Window);
+      if KeyCode <> 0 then
+      begin
+        if ARegister then
+          CaptureKey(FDisplay, KeyCode, Modifier, Window)
+        else
+          ReleaseKey(FDisplay, KeyCode, Modifier, Window);
+      end;
     end;
 
     if ARegister then
@@ -403,6 +425,18 @@ begin
     VK_F10: Result := XK_F10;
     VK_F11: Result := XK_F11;
     VK_F12: Result := XK_F12;
+    VK_F13: Result := XK_F13;
+    VK_F14: Result := XK_F14;
+    VK_F15: Result := XK_F15;
+    VK_F16: Result := XK_F16;
+    VK_F17: Result := XK_F17;
+    VK_F18: Result := XK_F18;
+    VK_F19: Result := XK_F19;
+    VK_F20: Result := XK_F20;
+    VK_F21: Result := XK_F21;
+    VK_F22: Result := XK_F22;
+    VK_F23: Result := XK_F23;
+    VK_F24: Result := XK_F24;
     VK_LCL_EQUAL: Result := XK_EQUAL;
     VK_LCL_COMMA: Result := XK_COMMA;
     VK_LCL_POINT: Result := XK_PERIOD;
@@ -507,6 +541,18 @@ begin
     XK_F10: Result := VK_F10;
     XK_F11: Result := VK_F11;
     XK_F12: Result := VK_F12;
+    XK_F13: Result := VK_F13;
+    XK_F14: Result := VK_F14;
+    XK_F15: Result := VK_F15;
+    XK_F16: Result := VK_F16;
+    XK_F17: Result := VK_F17;
+    XK_F18: Result := VK_F18;
+    XK_F19: Result := VK_F19;
+    XK_F20: Result := VK_F20;
+    XK_F21: Result := VK_F21;
+    XK_F22: Result := VK_F22;
+    XK_F23: Result := VK_F23;
+    XK_F24: Result := VK_F24;
     XK_EQUAL: Result := VK_LCL_EQUAL;
     XK_COMMA: Result := VK_LCL_COMMA;
     XK_PERIOD: Result := VK_LCL_POINT;
@@ -547,21 +593,21 @@ end;
 function TUnixHotkeyManager.FilterKeys(handle: QNativeEventFilter_hookH;
   eventType: QByteArrayH; message: long): boolean; cdecl;
 var
-  XCBKeyPressEvent: Pxcb_key_press_event_t;
+  Event: PByte;
 begin
   Result := False;
-  if (QByteArray_data(eventType) = 'xcb_generic_event_t') then
-  begin
-    if (Pxcb_generic_event_t(message).response_type = XCB_KEY_PRESS) then
-    begin                                                                  
-
-      DebugLn(inttostr(Pxcb_generic_event_t(message).response_type));
-      XCBKeyPressEvent := Pxcb_key_press_event_t(message);
-
-      Result := InternalFilterKeys(Self, XCBKeyPressEvent.detail, XCBKeyPressEvent.state);
-    end;
-
-  end;
+  if (message = 0) or (QByteArray_data(eventType) = nil) then
+    Exit;
+  // Qt/X11 delivers an xcb_generic_event_t in `message`; its first byte is
+  // the response type, a key press carries the keycode at +1 and the
+  // modifier state (uint16) at +28 (see the XCB_KEY_* offsets above).
+  if QByteArray_data(eventType) <> 'xcb_generic_event_t' then
+    Exit;
+  Event := PByte(PtrInt(message));
+  if (Event^ and XCB_EVENT_TYPE_MASK) <> XCB_KEY_PRESS then
+    Exit;
+  Result := InternalFilterKeys(Self, Event[XCB_KEY_DETAIL_OFS],
+    PWord(Event + XCB_KEY_STATE_OFS)^);
 end;
 {$ENDIF}
 
@@ -601,7 +647,7 @@ end;
 
 function TUnixHotkeyManager.IsWaylandSession: Boolean;
 begin
-  Result := (GetEnvironmentVariable('XDG_SESSION_TYPE') = 'wayland')
+  Result := (LowerCase(GetEnvironmentVariable('XDG_SESSION_TYPE')) = 'wayland')
     or (GetEnvironmentVariable('WAYLAND_DISPLAY') <> '');
 end;
 
@@ -694,6 +740,15 @@ begin
   // inherited unregisters everything (needs FPortal alive), then free it
   inherited Destroy;
   FreeAndNil(FPortal);
+  {$IFDEF QT}
+  // The native event filter is owned by LCL's Qt binding, not by the
+  // widgetset: destroy it explicitly (it also uninstalls itself).
+  if FQNativeEventFilter <> nil then
+  begin
+    QNativeEventFilter_Destroy(FQNativeEventFilter);
+    FQNativeEventFilter := nil;
+  end;
+  {$ENDIF}
   if FDisplay <> nil then
   begin
     XCloseDisplay(FDisplay);
@@ -702,9 +757,79 @@ begin
 end;
 
 function TUnixHotkeyManager.IsHotkeyAvailable(Shortcut: TShortCut): Boolean;
+var
+  Key, Modifier: Word;
+  ShiftState: TShiftState;
+  KeySym: TKeySym;
+  KeyCode: LongWord;
+  Window: TWindow;
+  OldHandler: TXErrorHandler;
 begin
-  //TODO: Sob :(
-  Result := True;
+  Result := False;
+
+  if Shortcut = 0 then
+    Exit;
+
+  // Already registered by this manager: probing would grab then release the
+  // very binding we own, so just report it as available.
+  if FindHotkey(Shortcut) >= 0 then
+    Exit(True);
+
+  case FBackend of
+    uhbX11:
+      begin
+        //Probe with a temporary grab on the same window the real registration
+        //would use: grabbing a key already taken by another client raises
+        //BadAccess asynchronously, so a local X error handler is installed.
+        if FDisplay = nil then
+          Exit;
+
+        ShortCutToKey(Shortcut, Key, ShiftState);
+        if Key = 0 then
+          Exit;
+
+        KeySym := KeyToSym(Key);
+        if KeySym = 0 then
+          Exit;
+
+        KeyCode := XKeysymToKeycode(FDisplay, KeySym);
+        if KeyCode = 0 then
+          Exit;
+
+        Modifier := ShiftToMod(ShiftState);
+
+        Window := DefaultRootWindow(FDisplay);
+        {$IFDEF LCLGTK2}
+        Window := gdk_x11_drawable_get_xid(FRoot);
+        {$ENDIF}
+        {$IFDEF LCLGTK3}
+        Window := gdk_x11_window_get_xid(FRoot);
+        {$ENDIF}
+
+        OldHandler := XSetErrorHandler(@HookXErrorHandler);
+        try
+          HookXError := False;
+          XGrabKey(FDisplay, KeyCode, Modifier and NotLock, Window, 1,
+            GrabModeAsync, GrabModeAsync);
+          XSync(FDisplay, False);
+          Result := not HookXError;
+          if Result then
+            XUngrabKey(FDisplay, KeyCode, Modifier and NotLock, Window);
+        finally
+          XSetErrorHandler(OldHandler);
+        end;
+      end;
+    uhbPortal:
+      //The portal only reports which shortcuts it actually bound at bind
+      //time; a dry-run probe would open a session (and possibly a dialog)
+      //without being able to unregister it. Optimistically report available
+      //and let RegisterShortcut reject what the portal refused.
+      Result := True;
+  else
+    //No usable backend (e.g. Wayland without a portal): nothing can be
+    //registered, so no shortcut is available.
+    Result := False;
+  end;
 end;
 
 end.

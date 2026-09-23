@@ -62,6 +62,8 @@ type
     procedure TestFindByIndex;
     procedure TestFindByIndexMissing;
     procedure TestRefreshKeepsItem;
+    procedure TestRefreshUnregisterFailureKeepsItem;
+    procedure TestRefreshReregisterFailureDropsItem;
     procedure TestClearAll;
     procedure TestNotifyCallback;
     procedure TestRegisterFailureNotTracked;
@@ -246,6 +248,29 @@ begin
   { Refresh of an unknown shortcut must be a no-op }
   FMgr.RefreshNotify(ShortCut(VK_Z, [ssCtrl]));
   AssertEquals('Count still 1', 1, FMgr.PubCount);
+end;
+
+procedure TTestHotkeysManager.TestRefreshUnregisterFailureKeepsItem;
+begin
+  { If the platform does not release the old binding, the shortcut is still
+    live: keep tracking it and do not attempt a re-registration. }
+  FMgr.RegisterNotify(ShortCut(VK_A, [ssCtrl]), nil);
+  FMgr.UnregisterResult := False;
+  FMgr.RefreshNotify(ShortCut(VK_A, [ssCtrl]));
+  AssertEquals('Still tracked', 1, FMgr.PubCount);
+  AssertEquals('Re-register not attempted', 1, FMgr.RegisterCalls);
+end;
+
+procedure TTestHotkeysManager.TestRefreshReregisterFailureDropsItem;
+begin
+  { Unregister succeeds but re-register fails: the shortcut is no longer
+    active, so the manager must stop reporting it. }
+  FMgr.RegisterNotify(ShortCut(VK_A, [ssCtrl]), nil);
+  FMgr.UnregisterResult := True;
+  FMgr.RegisterResult := False;
+  FMgr.RefreshNotify(ShortCut(VK_A, [ssCtrl]));
+  AssertEquals('Item dropped', 0, FMgr.PubCount);
+  AssertEquals('No longer found', -1, FMgr.FindHotkey(ShortCut(VK_A, [ssCtrl])));
 end;
 
 procedure TTestHotkeysManager.TestClearAll;

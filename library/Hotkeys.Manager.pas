@@ -83,7 +83,9 @@ type
     { Keyword used by backends that must namespace themselves (the Wayland
       portal uses it for the session handle, the request handle and the
       shortcut ids). Defaults to the executable name; set it before the
-      first registration to override it.
+      first registration to override it. The portal backend freezes the
+      token at the first registration, because changing it later would
+      desynchronize the engine from the portal.
 
       Note: the portal may still group the shortcuts under the application
       id it derives from the process (e.g. the IDE or terminal that started
@@ -244,14 +246,22 @@ var
   ShortCutEx: TShortcutEx;
 begin
   I := FindHotkey(Shortcut);
-  if I > -1 then
-  begin
-    ShortCutEx := Self[I];
+  if I < 0 then
+    Exit;
 
-    DoUnregister(ShortCutEx);
+  ShortCutEx := FList[I];
 
-    DoRegister(ShortCutEx);
-  end;
+  // Nothing to refresh if the platform kept the old binding: the shortcut is
+  // still live and re-registering it would fail anyway.
+  if not DoUnregister(ShortCutEx) then
+    Exit;
+
+  // The platform may refuse the re-registration (e.g. the shortcut was taken
+  // in the meantime). Drop the now-unregistered item so the manager does not
+  // report a shortcut that is no longer active; the caller can register it
+  // again and will get a fresh callback.
+  if not DoRegister(ShortCutEx) then
+    FList.Delete(I);
 end;
 
 function TBaseHotkeyManager.FindHotkeyByIndex(Index: Integer): Integer;

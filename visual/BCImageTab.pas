@@ -162,9 +162,10 @@ end;
 
 procedure TBCCustomImageTab.CMButtonPressed(var Message: TLMessage);
 var
-  Sender: TBCCustomImageButton;
+  Sender: TBCCustomImageTab;
 begin
-  if Message.WParam = FGroupIndex then
+  if (Message.WParam = FGroupIndex) and (Message.LParam <> 0)
+    and (TObject(Message.LParam) is TBCCustomImageTab) then
   begin
     Sender := TBCCustomImageTab(Message.LParam);
     if Sender <> Self then

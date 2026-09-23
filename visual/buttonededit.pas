@@ -104,22 +104,30 @@ type
     procedure DoEditTextChange(Sender: TObject);
     procedure DoEditTextClick(Sender: TObject);
     procedure DoEditTextKeyPress(Sender: TObject; var Key: Char);
+    procedure DoEditTextEnter(Sender: TObject);
+    procedure DoEditTextExit(Sender: TObject);
+    function GetAlignment: TAlignment;
     function GetCharCase: TEditCharCase;
     function GetFont: TFont;
+    function GetMaxLength: Integer;
     function GetOnKeyPress: TKeyPressEvent;
     function GetOnLeftButtonClick: TNotifyEvent;
     function GetOnRightButtonClick: TNotifyEvent;
     function GetParentFont: Boolean;
+    function GetPasswordChar: Char;
     function GetReadOnly: Boolean;
     function GetText: TCaption;
     function GetTextHint: TTranslateString;
+    procedure SetAlignment(AValue: TAlignment);
     procedure SetCharCase(AValue: TEditCharCase);
     procedure SetFont(AValue: TFont);
     procedure SetLeftButton(AValue: TGlyphButtonOptions);
+    procedure SetMaxLength(AValue: Integer);
     procedure SetOnKeyPress(AValue: TKeyPressEvent);
     procedure SetOnLeftButtonClick(AValue: TNotifyEvent);
     procedure SetOnRightButtonClick(AValue: TNotifyEvent);
     procedure SetParentFont(AValue: Boolean);
+    procedure SetPasswordChar(AValue: Char);
     procedure SetReadOnly(AValue: Boolean);
     procedure SetRightButton(AValue: TGlyphButtonOptions);
     procedure SetText(AValue: TCaption);
@@ -136,10 +144,13 @@ type
     procedure SetFocus; override;    
     function Focused: Boolean; override;
 
+    property Alignment: TAlignment read GetAlignment write SetAlignment default taLeftJustify;
     property CharCase: TEditCharCase read GetCharCase write SetCharCase default ecNormal;
     property Font: TFont read GetFont write SetFont;
     property LeftButton: TGlyphButtonOptions read FLeftButton write SetLeftButton;
+    property MaxLength: Integer read GetMaxLength write SetMaxLength default 0;
     property ParentFont: Boolean read GetParentFont write SetParentFont;
+    property PasswordChar: Char read GetPasswordChar write SetPasswordChar default #0;
     property RightButton: TGlyphButtonOptions read FRightButton write SetRightButton;
     property ReadOnly: Boolean read GetReadOnly write SetReadOnly default False;
     property Text: TCaption read GetText write SetText;
@@ -162,7 +173,7 @@ type
   published
     { Published declarations }
     property Align;
-//    property Alignment;
+    property Alignment;
     property Anchors;
 //    property AutoSize;
     property BiDiMode;
@@ -174,9 +185,10 @@ type
     property Enabled;
     property Font;
     property LeftButton;
+    property MaxLength;
     property ParentBiDiMode;
     property ParentFont;
-//    property PasswordChar;
+    property PasswordChar;
     property PopupMenu;
     property ReadOnly;
     property RightButton;
@@ -190,6 +202,8 @@ type
     //Events
     property OnChange;
     property OnClick;
+    property OnEnter;
+    property OnExit;
     property OnLeftButtonClick;
     property OnRightButtonClick;
     property OnKeyPress;
@@ -226,13 +240,19 @@ end;
 procedure TCustomGlyphButtonOptions.SetVisibile(AValue: Boolean);
 begin
   if AValue <> (FButton.Visible) then
+  begin
     FButton.Visible := AValue;
+    UpdateSize;
+  end;
 end;
 
 procedure TCustomGlyphButtonOptions.SetImages(AValue: TCustomImageList);
 begin
   if FButton.Images <> AValue then
+  begin
     FButton.Images := AValue;
+    UpdateSize;
+  end;
 end;
 
 procedure TCustomGlyphButtonOptions.SetImagesWidth(AValue: Integer);
@@ -240,6 +260,7 @@ begin
   if FButton.ImageWidth <> AValue then
   begin
     FButton.ImageWidth := AValue;
+    UpdateSize;
     Invalidate;
   end;
 end;
@@ -288,7 +309,10 @@ end;
 procedure TCustomGlyphButtonOptions.SetImageIndex(AValue: TImageIndex);
 begin
   if FButton.ImageIndex <> AValue then
+  begin
     FButton.ImageIndex := AValue;
+    UpdateSize;
+  end;
 end;
 
 constructor TCustomGlyphButtonOptions.Create(AOwner: TCustomButtonedEdit;
@@ -322,18 +346,17 @@ end;
 
 procedure TCustomGlyphButtonOptions.UpdateSize;
 begin
-  if ImageIndex <> -1 then
+  if ImageIndex = -1 then
+    Exit;
+  if Images <> nil then
   begin
-    if Images <> nil then
-    begin
-      FButton.Width  := FButton.ImageWidth;
-      FButton.Constraints.MaxHeight := Images.Height;
-    end
-    else
-    begin
-      FButton.Width := 0;
-      FButton.Height := 0;
-    end;
+    FButton.Width  := FButton.ImageWidth;
+    FButton.Constraints.MaxHeight := Images.Height;
+  end
+  else
+  begin
+    FButton.Width := 0;
+    FButton.Height := 0;
   end;
 end;
 
@@ -350,13 +373,17 @@ begin
     ImagesWidth := TCustomGlyphButtonOptions(ASource).ImagesWidth;
     ImageIndex := TCustomGlyphButtonOptions(ASource).ImageIndex;
     Visible := TCustomGlyphButtonOptions(ASource).Visible;
-  end;
+    DropDownMenu := TCustomGlyphButtonOptions(ASource).DropDownMenu;
+  end
+  else
+    inherited Assign(ASource);
 end;
 
 { TCustomButtonedEdit }
 
 function TCustomButtonedEdit.GetOnRightButtonClick: TNotifyEvent;
 begin
+  Result := nil;
   if Assigned(FRightButton) then
     Result := FRightButton.OnClick;
 end;
@@ -381,6 +408,12 @@ begin
   Result := FEditText.TextHint;
 end;
 
+procedure TCustomButtonedEdit.SetAlignment(AValue: TAlignment);
+begin
+  if FEditText.Alignment <> AValue then
+    FEditText.Alignment := AValue;
+end;
+
 procedure TCustomButtonedEdit.SetCharCase(AValue: TEditCharCase);
 begin
   if FEditText.CharCase <> AValue then
@@ -389,12 +422,25 @@ end;
 
 procedure TCustomButtonedEdit.SetFont(AValue: TFont);
 begin
-  if FEditText.Font.IsEqual(AValue) then
-    FEditText.Font := AValue;
+  if (AValue <> nil) and (not FEditText.Font.IsEqual(AValue)) then
+    FEditText.Font.Assign(AValue);
+end;
+
+procedure TCustomButtonedEdit.SetMaxLength(AValue: Integer);
+begin
+  if FEditText.MaxLength <> AValue then
+    FEditText.MaxLength := AValue;
+end;
+
+procedure TCustomButtonedEdit.SetPasswordChar(AValue: Char);
+begin
+  if FEditText.PasswordChar <> AValue then
+    FEditText.PasswordChar := AValue;
 end;
 
 function TCustomButtonedEdit.GetOnLeftButtonClick: TNotifyEvent;
 begin
+  Result := nil;
   if Assigned(FLeftButton) then
     Result := FLeftButton.OnClick;
 end;
@@ -417,9 +463,36 @@ begin
     FOnEditTextKeyPress(Self, Key);
 end;
 
+procedure TCustomButtonedEdit.DoEditTextEnter(Sender: TObject);
+begin
+  if Assigned(OnEnter) then
+    OnEnter(Self);
+end;
+
+procedure TCustomButtonedEdit.DoEditTextExit(Sender: TObject);
+begin
+  if Assigned(OnExit) then
+    OnExit(Self);
+end;
+
+function TCustomButtonedEdit.GetAlignment: TAlignment;
+begin
+  Result := FEditText.Alignment;
+end;
+
 function TCustomButtonedEdit.GetCharCase: TEditCharCase;
 begin
   Result := FEditText.CharCase;
+end;
+
+function TCustomButtonedEdit.GetMaxLength: Integer;
+begin
+  Result := FEditText.MaxLength;
+end;
+
+function TCustomButtonedEdit.GetPasswordChar: Char;
+begin
+  Result := FEditText.PasswordChar;
 end;
 
 function TCustomButtonedEdit.GetFont: TFont;
@@ -434,7 +507,8 @@ end;
 
 procedure TCustomButtonedEdit.SetLeftButton(AValue: TGlyphButtonOptions);
 begin
-  FLeftButton.Assign(AValue);
+  if (AValue <> nil) and (AValue <> FLeftButton) then
+    FLeftButton.Assign(AValue);
 end;
 
 procedure TCustomButtonedEdit.SetOnKeyPress(AValue: TKeyPressEvent);
@@ -466,7 +540,8 @@ end;
 
 procedure TCustomButtonedEdit.SetRightButton(AValue: TGlyphButtonOptions);
 begin
-  FRightButton.Assign(AValue);
+  if (AValue <> nil) and (AValue <> FRightButton) then
+    FRightButton.Assign(AValue);
 end;
 
 procedure TCustomButtonedEdit.SetText(AValue: TCaption);
@@ -528,6 +603,8 @@ begin
     OnChange := DoEditTextChange;
     OnClick := DoEditTextClick;
     OnKeyPress := DoEditTextKeyPress;
+    OnEnter := DoEditTextEnter;
+    OnExit := DoEditTextExit;
   end;
 
   UpdateSize;

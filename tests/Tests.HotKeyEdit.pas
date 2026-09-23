@@ -28,6 +28,7 @@ type
     procedure TestButtonAlwaysVisible;
     procedure TestButtonOnlyWithHotkey;
     procedure TestButtonImageIndex;
+    procedure TestButtonImageIndexReset;
   end;
 
 implementation
@@ -188,6 +189,33 @@ begin
 
     E.ClearHotkey;
     AssertEquals('Choose icon again', 7, E.RightButton.ImageIndex);
+  finally
+    E.Free;
+  end;
+end;
+
+procedure TTestHotKeyEdit.TestButtonImageIndexReset;
+var
+  E: THotKeyEdit;
+begin
+  { Resetting a per-state index to -1 must clear the glyph, not keep the
+    previous one. }
+  E := THotKeyEdit.Create(nil);
+  try
+    E.ClearImageIndex := 3;
+    E.ChooseImageIndex := 7;
+
+    E.Hotkey := ShortCut(VK_F5, [ssCtrl]);
+    AssertEquals('Clear icon when set', 3, E.RightButton.ImageIndex);
+
+    E.ClearImageIndex := -1;
+    AssertEquals('Clear reset to none', -1, E.RightButton.ImageIndex);
+
+    E.Hotkey := 0;
+    AssertEquals('Choose icon when empty', 7, E.RightButton.ImageIndex);
+
+    E.ChooseImageIndex := -1;
+    AssertEquals('Choose reset to none', -1, E.RightButton.ImageIndex);
   finally
     E.Free;
   end;

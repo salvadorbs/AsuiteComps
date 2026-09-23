@@ -92,6 +92,7 @@ begin
     on E: Exception do
       Fail('IsHotkeyAvailable raised: ' + E.Message);
   end;
+  AssertFalse('Zero shortcut unavailable', HotkeyManager.IsHotkeyAvailable(0));
   AssertTrue('Called without error', True);
 end;
 

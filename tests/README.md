@@ -18,7 +18,7 @@ platform hotkey managers.
 | `Tests.ButtonedEdit.pas` | `TButtonedEdit` properties, events and button options |
 | `Tests.BCImageTab.pas` | `TBCImageTab` toggle/group/exclusivity behavior |
 | `Tests.Platform.pas` | Platform manager smoke tests (singleton, constructor, backend selection, display-independent API) |
-| `Tests.Portal.pas` | Wayland `GlobalShortcuts` portal backend: accelerator conversion (always) and live round-trip/activation (opt-in via `ASUITECOMPS_TEST_PORTAL`) |
+| `Tests.Portal.pas` | Wayland `GlobalShortcuts` portal backend: accelerator conversion (always) and live round-trip/activation (opt-in via `ASUITECOMPS_TEST_PORTAL`). Compiled on Unix only; on Windows it asserts the backend is unix-only |
 | `run_tests.sh` | Build + run helper used locally and by CI |
 
 ## Run locally
@@ -29,6 +29,8 @@ platform hotkey managers.
 
 Options: `--lazbuild <path>` (default: `lazbuild` from PATH),
 `--widgetset <gtk2|gtk2|gtk3|qt5|qt6|win32>` (default: `gtk2`).
+Set `ASUITECOMPS_MIN_TESTS` to change the minimum number of tests the
+script requires (default 100); it fails the run if the suite shrinks.
 
 GUI control tests need a display server on Linux. If `DISPLAY` is not set
 and `xvfb-run` is available, the script re-executes itself under
@@ -51,6 +53,10 @@ ASuite. Any test failure fails the job.
   `DoUnregister` succeeds. A failure therefore leaves no stale entry and can
   be retried; pinned by `TestRegisterFailureNotTracked`,
   `TestRegisterRetryAfterFailure` and `TestUnregisterFailureKeepsItem`.
+- `TBaseHotkeyManager.RefreshNotify` is transactional: it returns early when
+  the platform keeps the old binding, and drops the item when the
+  re-registration fails; pinned by `TestRefreshUnregisterFailureKeepsItem`
+  and `TestRefreshReregisterFailureDropsItem`.
 - The portal backend re-binds the desired set on a single long-lived session
   instead of recreating one per change: KDE only unregisters a shortcut while
   it is registered in the current session. The platform manager overrides
@@ -60,9 +66,10 @@ ASuite. Any test failure fails the job.
   also checks KDE's KGlobalAccel to confirm the shortcut is listed while
   registered and gone after `UnregisterShortcut`; the check is skipped when
   KGlobalAccel is not reachable.
-- `TCustomButtonedEdit.SetFont` currently assigns only when the fonts are
-  already equal (inverted guard); it is deliberately not covered by tests
-  so a future fix is not blocked.
+- `TCustomButtonedEdit.SetFont` now assigns only when the fonts differ (the
+  old inverted guard ignored every real assignment); covered by
+  `TestFontAssignment`. `MaxLength`, `PasswordChar` and `Alignment` are
+  forwarded to the inner edit and covered by `TestMaxLengthPasswordAlignment`.
 - `TBCImageTab` click tests set `AlphaTest := False` and explicit bounds:
   an unrendered `BCImageButton` with `AlphaTest = True` touches a nil
   internal bitmap (upstream BGRAControls behavior, unrelated to this package).

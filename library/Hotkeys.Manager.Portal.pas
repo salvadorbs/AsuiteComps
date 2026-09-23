@@ -180,6 +180,10 @@ type
     destructor Destroy; override;
 
     function HasPortal: Boolean;
+    { Binds a shortcut through the portal. On success Trigger holds the
+      accelerator assigned by the portal. The TShortcutEx instance is only
+      referenced (not owned): the caller must keep it alive until it is
+      unregistered. }
     function RegisterShortcut(Shortcut: TShortcutEx; out Trigger: String): Boolean;
     function UnregisterShortcut(Shortcut: TShortcutEx): Boolean;
     { Dispatches any pending D-Bus message and delivers queued activations.
@@ -515,6 +519,14 @@ end;
 
 procedure TPortalHotkeyEngine.SetAppToken(const Value: String);
 begin
+  // The token namespaces the session handle, the request handles and the
+  // shortcut ids. Changing it after a registration would desynchronize the
+  // engine from the portal, so it is frozen once anything was registered.
+  if (FSession <> '') or (FDesired.Count > 0) then
+  begin
+    Log('AppToken change ignored: engine already in use');
+    Exit;
+  end;
   FAppToken := SanitizeToken(Value);
 end;
 

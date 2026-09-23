@@ -13,12 +13,17 @@ c) Override the KeyDown and KeyPress methods to process keyboard input.
 }
 unit HotKey;
 
-{$mode DelphiUnicode}{$H+}
+{$I ASuiteComps.inc}
 
 interface
 
 uses
-  Classes, SysUtils, LResources, Forms, Controls, Graphics, Dialogs, Menus, {$IFDEF Windows}Windows,{$ENDIF} LMessages, LCLIntf, LCLType, LCLProc, LazLogger;
+  Classes, SysUtils, LResources, Forms, Controls, Graphics, Dialogs, Menus, {$IFDEF Windows}Windows,{$ENDIF} LMessages, LCLIntf, LCLType, LCLProc
+  {$IFDEF INDEBUG}, LazLogger{$ENDIF};
+
+resourcestring
+  { Shown by THotKey when no shortcut is set. }
+  SHotKeyNoneText = 'None';
 
 type
   { Non-visual shortcut capture engine. It turns a key + shift state into a
@@ -64,7 +69,7 @@ type
     procedure SetHotkey(AValue: TShortCut);
     function GetNoModifier: Boolean;
     procedure SetNoModifier(AValue: Boolean);
-    procedure CaptureChanged(Sender: TObject);
+    procedure DoShortcutChange(Sender: TObject);
   protected
 {    procedure CreateParams(var Params: TCreateParams); override;}
     procedure DoEnter; override;
@@ -128,14 +133,21 @@ end;
 function TShortcutCapture.IsClearKey(AKey: Word; AShift: TShiftState): Boolean;
 begin
   Result := ((AKey = VK_BACK) or (AKey = VK_DELETE)) and
-    ((AShift * [ssShift, ssAlt, ssCtrl, ssMeta]) = []);
+    ((AShift * [ssShift, ssAlt, ssCtrl, ssMeta, ssSuper]) = []);
 end;
 
 function TShortcutCapture.MakeShortcut(AKey: Word; AShift: TShiftState): TShortCut;
 var
   Filtered: TShiftState;
 begin
-  Filtered := AShift * [ssShift, ssAlt, ssCtrl, ssMeta];
+  Filtered := AShift * [ssShift, ssAlt, ssCtrl, ssMeta, ssSuper];
+  // LCL TShortCut cannot represent ssSuper (the "Super"/"Windows" key is
+  // encoded as ssMeta), so fold it to avoid losing the modifier.
+  if ssSuper in Filtered then
+  begin
+    Exclude(Filtered, ssSuper);
+    Include(Filtered, ssMeta);
+  end;
   if (not FNoModifier) and (Filtered = []) then
     Filtered := [ssCtrl];
 
@@ -168,9 +180,11 @@ begin
   FTextColor := clCaptionText;
   FBorderColor := clBtnShadow;
   FAcceptsInput := False;
+  // A hotkey is edited by typing, so expose it as a single-line text editor.
+  AccessibleRole := larTextEditorSingleline;
 
   FCapture := TShortcutCapture.Create;
-  FCapture.OnChange := CaptureChanged;
+  FCapture.OnChange := DoShortcutChange;
 
   {FAutoSelect := True;
   FAutoSelected := False;
@@ -208,7 +222,7 @@ begin
   FCapture.NoModifier := AValue;
 end;
 
-procedure THotKey.CaptureChanged(Sender: TObject);
+procedure THotKey.DoShortcutChange(Sender: TObject);
 begin
   Invalidate;
 
@@ -224,7 +238,9 @@ end;}
 procedure THotKey.DoEnter;
 begin
   inherited;
+  {$IFDEF INDEBUG}
   DebugLn('THotKey.DoEnter');
+  {$ENDIF}
   //CreateCaret(Handle, 0, 1, 16);
   //GetCaretPos(Point);
   //DebugLn(', X: ' + IntToStr(Point.x));
@@ -241,7 +257,9 @@ end;
 
 procedure THotKey.DoExit;
 begin
+  {$IFDEF INDEBUG}
   DebugLn('THotKey.DoExit');
+  {$ENDIF}
   //HideCaret(Handle);
   {DestroyCaret(Handle);}
   FBackgroundColor := clWindow;
@@ -270,13 +288,17 @@ end;
 procedure THotKey.KeyDown(var Key: Word; Shift: TShiftState);
 begin
   inherited;
+  {$IFDEF INDEBUG}
   DebugLn('THotKey.KeyDown ' + IntToStr(Key));
+  {$ENDIF}
 end;
 
 procedure THotKey.KeyUp(var Key: Word; Shift: TShiftState);
 begin
   inherited;
+  {$IFDEF INDEBUG}
   DebugLn('THotKey.KeyUp ' + IntToStr(Key));
+  {$ENDIF}
 
   if FAcceptsInput then
     begin
@@ -302,15 +324,14 @@ begin
   //Draw Background
   Canvas.Brush.Color := FBackgroundColor;
   Canvas.Font.Assign(Self.Font);
-  Canvas.Pen.Color := clRed;
 
-  //Draw Border Rectangle
+  //Draw Border Rectangle (also fills the client area with the background)
   Canvas.Pen.Color := FBorderColor;
   Canvas.Pen.Width := 1;
   Canvas.Rectangle(ClientRect);
 
   //Canvas.Brush.Assign(Self.Brush);  No Default Brush!
-  if Hotkey <> 0 then txt := ShortCutToText(Hotkey) else txt := 'None';
+  if Hotkey <> 0 then txt := ShortCutToText(Hotkey) else txt := SHotKeyNoneText;
 
   //Draw Text
   Canvas.Font.Color := FTextColor;
@@ -320,7 +341,9 @@ end;
 
 procedure THotKey.EditingDone;
 begin
+  {$IFDEF INDEBUG}
   DebugLn('THotKey.EditingDone');
+  {$ENDIF}
   Invalidate;
   inherited;
 end;

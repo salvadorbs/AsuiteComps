@@ -5,7 +5,7 @@ unit Tests.ButtonedEdit;
 interface
 
 uses
-  fpcunit, testregistry, Classes, SysUtils, Forms, StdCtrls,
+  fpcunit, testregistry, Classes, SysUtils, Forms, StdCtrls, Graphics,
   ButtonedEdit;
 
 type
@@ -38,6 +38,8 @@ type
     procedure TestButtonOptionsAssign;
     procedure TestButtonOptionsRoundTrip;
     procedure TestNotFocusedHeadless;
+    procedure TestFontAssignment;
+    procedure TestMaxLengthPasswordAlignment;
   end;
 
 implementation
@@ -256,6 +258,56 @@ begin
   E := TButtonedEdit.Create(nil);
   try
     AssertFalse('Not focused', E.Focused);
+  finally
+    E.Free;
+  end;
+end;
+
+procedure TTestButtonedEdit.TestFontAssignment;
+var
+  E: TButtonedEdit;
+  F: TFont;
+begin
+  { Regression: SetFont used to assign only when the fonts were already
+    equal, so a real assignment was silently ignored. }
+  E := TButtonedEdit.Create(nil);
+  try
+    F := TFont.Create;
+    try
+      F.Size := 17;
+      F.Style := [fsBold];
+      E.Font := F;
+      AssertEquals('Size applied', 17, E.Font.Size);
+      AssertTrue('Style applied', fsBold in E.Font.Style);
+
+      { Re-assigning the same font must not corrupt the value. }
+      E.Font := F;
+      AssertEquals('Size kept', 17, E.Font.Size);
+    finally
+      F.Free;
+    end;
+  finally
+    E.Free;
+  end;
+end;
+
+procedure TTestButtonedEdit.TestMaxLengthPasswordAlignment;
+var
+  E: TButtonedEdit;
+begin
+  E := TButtonedEdit.Create(nil);
+  try
+    AssertEquals('Default MaxLength', 0, E.MaxLength);
+    E.MaxLength := 12;
+    AssertEquals('MaxLength', 12, E.MaxLength);
+
+    AssertTrue('Default PasswordChar', E.PasswordChar = #0);
+    E.PasswordChar := '*';
+    AssertTrue('PasswordChar', E.PasswordChar = '*');
+
+    AssertTrue('Default Alignment', E.Alignment = taLeftJustify);
+    E.Alignment := taRightJustify;
+    AssertTrue('Alignment', E.Alignment = taRightJustify);
   finally
     E.Free;
   end;

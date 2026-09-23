@@ -45,4 +45,23 @@ if [[ ! -x "$BIN" ]]; then
 fi
 
 echo "=== Running ASuiteCompsTests ==="
-"$BIN" --all --format=plain
+
+# Guard against a silently shrinking suite (e.g. tests dropped from the .lpi):
+# fail when fewer than ASUITECOMPS_MIN_TESTS (default 100) tests actually run.
+MIN_TESTS="${ASUITECOMPS_MIN_TESTS:-100}"
+OUTPUT="$("$BIN" --all --format=plain 2>&1)"
+STATUS=$?
+printf '%s\n' "$OUTPUT"
+
+RUN_TESTS="$(printf '%s\n' "$OUTPUT" | sed -n 's/^Number of run tests:[[:space:]]*\([0-9][0-9]*\).*/\1/p' | tail -n 1)"
+if [[ -n "$RUN_TESTS" ]]; then
+  echo "=== Ran $RUN_TESTS test(s) ==="
+  if (( RUN_TESTS < MIN_TESTS )); then
+    echo "ERROR: expected at least $MIN_TESTS tests, got $RUN_TESTS" >&2
+    exit 1
+  fi
+else
+  echo "WARNING: could not parse the number of run tests" >&2
+fi
+
+exit $STATUS

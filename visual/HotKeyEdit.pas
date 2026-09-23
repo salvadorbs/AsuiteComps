@@ -194,14 +194,12 @@ begin
   if FHotkey <> 0 then
   begin
     RightButton.Visible := True;
-    if FClearImageIndex <> -1 then
-      RightButton.ImageIndex := FClearImageIndex;
+    RightButton.ImageIndex := FClearImageIndex;
   end
   else
   begin
     RightButton.Visible := not FButtonVisibleOnlyWithHotkey;
-    if FChooseImageIndex <> -1 then
-      RightButton.ImageIndex := FChooseImageIndex;
+    RightButton.ImageIndex := FChooseImageIndex;
   end;
 
   RightButton.UpdateSize;

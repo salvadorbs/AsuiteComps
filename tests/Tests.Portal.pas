@@ -20,7 +20,9 @@ type
 
   TTestPortal = class(TTestCase)
   private
+{$IFDEF UNIX}
     procedure OnActNotify(Sender: TObject; ShortcutEx: TShortcutEx);
+{$ENDIF}
   published
     procedure TestAcceleratorCtrlAlt;
     procedure TestAcceleratorFunctionKeys;
@@ -419,6 +421,7 @@ begin
 {$ENDIF}
 end;
 
+{$IFDEF UNIX}
 var
   ActFired: Boolean = False;
 
@@ -426,14 +429,18 @@ procedure TTestPortal.OnActNotify(Sender: TObject; ShortcutEx: TShortcutEx);
 begin
   ActFired := True;
 end;
+{$ENDIF}
 
 procedure TTestPortal.TestLiveActivation;
+{$IFDEF UNIX}
 var
   Engine: TPortalHotkeyEngine;
   S: TShortcutEx;
   Trigger: String;
   Deadline: QWord;
+{$ENDIF}
 begin
+{$IFDEF UNIX}
   if GetEnvironmentVariable('ASUITECOMPS_TEST_PORTAL') <> '2' then
     Exit; // interactive: needs the user to press the hotkey
   Engine := TPortalHotkeyEngine.Create(nil);
@@ -457,6 +464,9 @@ begin
   finally
     Engine.Free;
   end;
+{$ELSE}
+  AssertTrue('Portal is unix-only', True);
+{$ENDIF}
 end;
 
 initialization
