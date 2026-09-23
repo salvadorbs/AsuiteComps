@@ -23,7 +23,8 @@ uses
   Tests.HotKeyEdit,
   Tests.ButtonedEdit,
   Tests.BCImageTab,
-  Tests.Platform;
+  Tests.Platform,
+  Tests.Portal;
 
 var
   Application: TTestRunner;

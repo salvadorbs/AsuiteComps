@@ -17,7 +17,8 @@ platform hotkey managers.
 | `Tests.HotKeyEdit.pas` | `THotKeyEdit` value/text sync, clear, events and right-button state |
 | `Tests.ButtonedEdit.pas` | `TButtonedEdit` properties, events and button options |
 | `Tests.BCImageTab.pas` | `TBCImageTab` toggle/group/exclusivity behavior |
-| `Tests.Platform.pas` | Platform manager smoke tests (singleton, constructor, display-independent API) |
+| `Tests.Platform.pas` | Platform manager smoke tests (singleton, constructor, backend selection, display-independent API) |
+| `Tests.Portal.pas` | Wayland `GlobalShortcuts` portal backend: accelerator conversion (always) and live round-trip/activation (opt-in via `ASUITECOMPS_TEST_PORTAL`) |
 | `run_tests.sh` | Build + run helper used locally and by CI |
 
 ## Run locally
@@ -45,9 +46,20 @@ ASuite. Any test failure fails the job.
   machine state (X11 vs Wayland, shortcuts already taken by other apps).
   `Tests.Platform` only covers construction and display-independent API,
   including the constructor path used when no X11 display exists.
-- `TBaseHotkeyManager.RegisterNotify` keeps the item in its list even if
-  the platform `DoRegister` fails (its return value is still propagated).
-  This behavior is pinned by `TestRegisterFailureStillTracked`.
+- `TBaseHotkeyManager.RegisterNotify` keeps an item only when the platform
+  `DoRegister` succeeds, and `UnregisterNotify` drops it only when
+  `DoUnregister` succeeds. A failure therefore leaves no stale entry and can
+  be retried; pinned by `TestRegisterFailureNotTracked`,
+  `TestRegisterRetryAfterFailure` and `TestUnregisterFailureKeepsItem`.
+- The portal backend re-binds the desired set on a single long-lived session
+  instead of recreating one per change: KDE only unregisters a shortcut while
+  it is registered in the current session. The platform manager overrides
+  `RefreshNotify` so `THotkeyItemsList.RefreshRegs` does not rebind per
+  shortcut.
+- `Tests.Portal.TestLivePortalRoundTrip` (opt-in, `ASUITECOMPS_TEST_PORTAL=1`)
+  also checks KDE's KGlobalAccel to confirm the shortcut is listed while
+  registered and gone after `UnregisterShortcut`; the check is skipped when
+  KGlobalAccel is not reachable.
 - `TCustomButtonedEdit.SetFont` currently assigns only when the fonts are
   already equal (inverted guard); it is deliberately not covered by tests
   so a future fix is not blocked.

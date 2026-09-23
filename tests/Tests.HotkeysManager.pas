@@ -18,6 +18,7 @@ type
     FUnregisterCalls: Integer;
     FNextIndex: Integer;
     FRegisterResult: Boolean;
+    FUnregisterResult: Boolean;
     FAvailable: Boolean;
   protected
     function DoRegister(Shortcut: TShortcutEx): Boolean; override;
@@ -32,6 +33,7 @@ type
     property RegisterCalls: Integer read FRegisterCalls;
     property UnregisterCalls: Integer read FUnregisterCalls;
     property RegisterResult: Boolean read FRegisterResult write FRegisterResult;
+    property UnregisterResult: Boolean read FUnregisterResult write FUnregisterResult;
   end;
 
   { TTestHotkeysManager }
@@ -62,9 +64,14 @@ type
     procedure TestRefreshKeepsItem;
     procedure TestClearAll;
     procedure TestNotifyCallback;
-    procedure TestRegisterFailureStillTracked;
+    procedure TestRegisterFailureNotTracked;
+    procedure TestRegisterRetryAfterFailure;
+    procedure TestUnregisterFailureKeepsItem;
     procedure TestCompareFunction;
     procedure TestDestructorWithItems;
+    procedure TestDefaultHotkeyToken;
+    procedure TestAppTokenProperty;
+    procedure TestPortalBindStrategyProperty;
   end;
 
 implementation
@@ -75,6 +82,7 @@ constructor TTestHotkeyManager.Create;
 begin
   inherited Create;
   FRegisterResult := True;
+  FUnregisterResult := True;
   FAvailable := True;
 end;
 
@@ -92,7 +100,7 @@ end;
 function TTestHotkeyManager.DoUnregister(Shortcut: TShortcutEx): Boolean;
 begin
   Inc(FUnregisterCalls);
-  Result := True;
+  Result := FUnregisterResult;
 end;
 
 function TTestHotkeyManager.IsHotkeyAvailable(Shortcut: TShortCut): Boolean;
@@ -263,14 +271,37 @@ begin
   AssertEquals('Tag visible in callback', 99, FNotifyTag);
 end;
 
-procedure TTestHotkeysManager.TestRegisterFailureStillTracked;
+procedure TTestHotkeysManager.TestRegisterFailureNotTracked;
 begin
-  { Documents base-class behavior: the item is kept in the list even when
-    the platform DoRegister fails (its return value is propagated). }
+  { A failed platform registration must not leave a stale item behind: the
+    base manager drops it so the failure has no permanent effect. }
   FMgr.RegisterResult := False;
   AssertFalse('Register fails', FMgr.RegisterNotify(ShortCut(VK_A, [ssCtrl]), nil));
-  AssertEquals('Item still tracked', 0, FMgr.FindHotkey(ShortCut(VK_A, [ssCtrl])));
-  AssertTrue('Can unregister after failure', FMgr.UnregisterNotify(ShortCut(VK_A, [ssCtrl])));
+  AssertEquals('Count', 0, FMgr.PubCount);
+  AssertEquals('Not tracked', -1, FMgr.FindHotkey(ShortCut(VK_A, [ssCtrl])));
+end;
+
+procedure TTestHotkeysManager.TestRegisterRetryAfterFailure;
+begin
+  FMgr.RegisterResult := False;
+  AssertFalse('First attempt fails', FMgr.RegisterNotify(ShortCut(VK_A, [ssCtrl]), nil));
+  FMgr.RegisterResult := True;
+  AssertTrue('Retry succeeds', FMgr.RegisterNotify(ShortCut(VK_A, [ssCtrl]), nil));
+  AssertEquals('Count', 1, FMgr.PubCount);
+  AssertEquals('DoRegister called twice', 2, FMgr.RegisterCalls);
+end;
+
+procedure TTestHotkeysManager.TestUnregisterFailureKeepsItem;
+begin
+  { When the platform refuses to release a shortcut, it must stay tracked so
+    the failure can be retried and the object is not freed while still live. }
+  FMgr.RegisterNotify(ShortCut(VK_A, [ssCtrl]), nil);
+  FMgr.UnregisterResult := False;
+  AssertFalse('Unregister fails', FMgr.UnregisterNotify(ShortCut(VK_A, [ssCtrl])));
+  AssertEquals('Still tracked', 1, FMgr.PubCount);
+  FMgr.UnregisterResult := True;
+  AssertTrue('Retry unregister succeeds', FMgr.UnregisterNotify(ShortCut(VK_A, [ssCtrl])));
+  AssertEquals('Count', 0, FMgr.PubCount);
 end;
 
 procedure TTestHotkeysManager.TestCompareFunction;
@@ -295,6 +326,48 @@ begin
     A.Free;
     B.Free;
   end;
+end;
+
+procedure TTestHotkeysManager.TestDefaultHotkeyToken;
+var
+  Token: String;
+  I: Integer;
+  C: Char;
+begin
+  Token := DefaultHotkeyToken;
+  AssertTrue('Non empty', Token <> '');
+  for I := 1 to Length(Token) do
+  begin
+    C := Token[I];
+    AssertTrue('Object-path-safe characters only',
+      ((C >= 'a') and (C <= 'z')) or ((C >= 'A') and (C <= 'Z'))
+      or ((C >= '0') and (C <= '9')) or (C = '_'));
+  end;
+end;
+
+procedure TTestHotkeysManager.TestAppTokenProperty;
+var
+  Local: TTestHotkeyManager;
+begin
+  { The base class stores the token as-is; the portal backend sanitizes it. }
+  FMgr.AppToken := 'my_token';
+  AssertEquals('Stored', 'my_token', FMgr.AppToken);
+
+  Local := TTestHotkeyManager.Create;
+  try
+    AssertTrue('Not empty by default', Local.AppToken <> '');
+  finally
+    Local.Free;
+  end;
+end;
+
+procedure TTestHotkeysManager.TestPortalBindStrategyProperty;
+begin
+  AssertTrue('Default is pbsAuto', FMgr.PortalBindStrategy = pbsAuto);
+  FMgr.PortalBindStrategy := pbsIncremental;
+  AssertTrue('Stored incremental', FMgr.PortalBindStrategy = pbsIncremental);
+  FMgr.PortalBindStrategy := pbsSpecCompliant;
+  AssertTrue('Stored spec-compliant', FMgr.PortalBindStrategy = pbsSpecCompliant);
 end;
 
 procedure TTestHotkeysManager.TestDestructorWithItems;

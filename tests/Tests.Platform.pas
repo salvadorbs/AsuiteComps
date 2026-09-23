@@ -28,6 +28,8 @@ type
     procedure TestFindOnEmpty;
     procedure TestDirectInstanceCreateFree;
     procedure TestIsHotkeyAvailableCallable;
+    procedure TestBackendStable;
+    procedure TestRefreshNotifyCallable;
   end;
 
 implementation
@@ -82,15 +84,42 @@ begin
 end;
 
 procedure TTestPlatformHotkeys.TestIsHotkeyAvailableCallable;
-var
-  Ok: Boolean;
 begin
   { Only checks the call does not raise; the result depends on the machine. }
   try
-    Ok := HotkeyManager.IsHotkeyAvailable(ShortCut(VK_F24, [ssCtrl, ssAlt, ssShift]));
+    HotkeyManager.IsHotkeyAvailable(ShortCut(VK_F24, [ssCtrl, ssAlt, ssShift]));
   except
     on E: Exception do
       Fail('IsHotkeyAvailable raised: ' + E.Message);
+  end;
+  AssertTrue('Called without error', True);
+end;
+
+procedure TTestPlatformHotkeys.TestBackendStable;
+{$IFDEF MSWINDOWS}
+begin
+  AssertTrue('Windows uses the native manager', True);
+end;
+{$ELSE}
+var
+  First: TUnixHotkeyBackend;
+begin
+  { The backend is chosen once at construction; reading it twice must not
+    change (the environment may differ from the session at startup). }
+  First := TUnixHotkeyManager(HotkeyManager).Backend;
+  AssertEquals('Backend stable', Ord(First), Ord(TUnixHotkeyManager(HotkeyManager).Backend));
+end;
+{$ENDIF}
+
+procedure TTestPlatformHotkeys.TestRefreshNotifyCallable;
+begin
+  { Refreshing an unknown shortcut is a no-op on every backend and must
+    never raise or start a registration. }
+  try
+    HotkeyManager.RefreshNotify(ShortCut(VK_F24, [ssCtrl, ssAlt, ssShift]));
+  except
+    on E: Exception do
+      Fail('RefreshNotify raised: ' + E.Message);
   end;
   AssertTrue('Called without error', True);
 end;

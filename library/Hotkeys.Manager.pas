@@ -33,6 +33,16 @@ uses
   Generics.Defaults;
 
 type
+  { How the Wayland portal backend applies a change of the shortcut set.
+
+    pbsSpecCompliant - a fresh session for every change, honouring the
+      portal rule that BindShortcuts is called once per session;
+    pbsIncremental   - one long-lived session, re-bound on every change;
+    pbsAuto          - pbsIncremental on KDE (where a shortcut can only be
+      removed while it is registered in the current session), pbsSpecCompliant
+      elsewhere. See Hotkeys.Manager.Portal for the details. }
+  TPortalBindStrategy = (pbsAuto, pbsSpecCompliant, pbsIncremental);
+
   THotkeyList = TObjectList<TShortcutEx>;
 
   THotkeysComparer = TComparer<TShortcutEx>;
@@ -42,6 +52,8 @@ type
   TBaseHotkeyManager = class
   private
     FList: THotkeyList;
+    FAppToken: String;
+    FPortalBindStrategy: TPortalBindStrategy;
     function GetHotkey(Index: Integer): TShortcutEx;
     function GetCount: Integer;
   protected
@@ -56,7 +68,10 @@ type
 
     function RegisterNotify(Shortcut: TShortCut; Notify: TKeyNotifyEvent; Tag: Integer = -1): Boolean;
     function UnregisterNotify(Shortcut: TShortCut): Boolean;
-    procedure RefreshNotify(Shortcut: TShortCut);
+    { Re-applies the platform registration of an already known shortcut.
+      Only the callback/tag can change, so backends whose bindings are looked
+      up live may override this with a no-op. }
+    procedure RefreshNotify(Shortcut: TShortCut); virtual;
 
     function FindHotkey(Key: Word; ShiftState: TShiftState): Integer; overload;
     function FindHotkey(Shortcut: TShortCut): Integer; overload;
@@ -64,20 +79,61 @@ type
     procedure ClearAllHotkeys;
 
     function IsHotkeyAvailable(Shortcut: TShortCut): Boolean; virtual; abstract;
+
+    { Keyword used by backends that must namespace themselves (the Wayland
+      portal uses it for the session handle, the request handle and the
+      shortcut ids). Defaults to the executable name; set it before the
+      first registration to override it.
+
+      Note: the portal may still group the shortcuts under the application
+      id it derives from the process (e.g. the IDE or terminal that started
+      the app), so this does not always change the name shown by the
+      desktop environment. }
+    property AppToken: String read FAppToken write FAppToken;
+
+    { Binding strategy used by the Wayland portal backend. Set it before the
+      first registration; pbsAuto is the recommended default. }
+    property PortalBindStrategy: TPortalBindStrategy
+      read FPortalBindStrategy write FPortalBindStrategy;
   end;
 
 { Used by THotkeyList }
 function HotkeyCompare(constref A, B: TShortcutEx): Integer;
+
+{ Sanitized default for TBaseHotkeyManager.AppToken (executable basename,
+  reduced to object-path-safe characters). }
+function DefaultHotkeyToken: String;
 
 var
   InternalManager: TBaseHotkeyManager;
 
 implementation
 
+function DefaultHotkeyToken: String;
+var
+  S: String;
+  I: Integer;
+begin
+  S := ChangeFileExt(ExtractFileName(ParamStr(0)), '');
+  Result := '';
+  for I := 1 to Length(S) do
+    if ((S[I] >= 'a') and (S[I] <= 'z'))
+      or ((S[I] >= 'A') and (S[I] <= 'Z'))
+      or ((S[I] >= '0') and (S[I] <= '9'))
+      or (S[I] = '_') then
+      Result := Result + S[I]
+    else
+      Result := Result + '_';
+  if Result = '' then
+    Result := 'hotkey';
+end;
+
 constructor TBaseHotkeyManager.Create;
 begin
   inherited Create;
 
+  FAppToken := DefaultHotkeyToken;
+  FPortalBindStrategy := pbsAuto;
   FList := THotkeyList.Create(THotkeysComparer.Construct(HotkeyCompare), True);
 end;
 
@@ -135,24 +191,29 @@ var
   H: TShortcutEx;
   I: Integer;
 begin
+  Result := False;
+
   if Shortcut = 0 then
     Exit(False);
 
   I := FindHotkey(Shortcut);
+  if I >= 0 then
+    Exit(False); // already registered (or a previous attempt is still tracked)
 
-  Result := I < 0;
-  if Result then
+  // Register with the platform first, and keep the item only when it
+  // succeeded. This way a failed DoRegister leaves no stale entry behind
+  // and the caller can simply retry (see the transactional portal backend).
+  H := TShortcutEx.Create(Shortcut);
+  H.Notify := Notify;
+  H.Tag := Tag;
+
+  if DoRegister(H) then
   begin
-    H := TShortcutEx.Create(Shortcut);
-    try
-      H.Notify := Notify;
-      H.Tag := Tag;
-
-      Result := DoRegister(H);
-    finally
-      FList.Add(H);
-    end;
-  end;
+    FList.Add(H);
+    Result := True;
+  end
+  else
+    H.Free;
 end;
 
 function TBaseHotkeyManager.UnregisterNotify(Shortcut: TShortCut): Boolean;
@@ -167,8 +228,13 @@ begin
   I := FindHotkey(Shortcut);
   if I > -1 then
   begin
-    Result := DoUnregister(FList[I]);
-    FList.Delete(I);
+    // Only drop the item when the platform released it, so a failure keeps
+    // the state consistent and can be retried.
+    if DoUnregister(FList[I]) then
+    begin
+      FList.Delete(I);
+      Result := True;
+    end;
   end;
 end;
 
@@ -208,10 +274,15 @@ procedure TBaseHotkeyManager.ClearAllHotkeys;
 var
   H: TShortcutEx;
 begin
+  // Teardown must always terminate, even when the platform refuses to
+  // release a shortcut: force the removal instead of looping forever. A
+  // failed DoUnregister may leave the shortcut live in the OS, but there is
+  // nothing else to try once the manager is going away.
   while Count > 0 do
   begin
     H := Hotkeys[Count - 1];
-    UnregisterNotify(H.SimpleShortcut);
+    DoUnregister(H);
+    FList.Delete(Count - 1);
   end;
 end;
 

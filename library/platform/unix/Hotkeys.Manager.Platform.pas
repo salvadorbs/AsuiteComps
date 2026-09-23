@@ -33,8 +33,8 @@ unit Hotkeys.Manager.Platform;
 interface
 
 uses
-  X, XLib, KeySym, Hotkeys.Manager, Hotkeys.ShortcutEx, LCLType, Menus, LCLProc,
-  Classes, sysutils
+  X, XLib, KeySym, Hotkeys.Manager, Hotkeys.ShortcutEx, Hotkeys.Manager.Portal,
+  LCLType, Menus, LCLProc, Classes, sysutils, ExtCtrls
 
   {$IFDEF LCLGTK2}
   , Gdk2, Gdk2x, Gtk2Proc
@@ -58,11 +58,20 @@ uses
 
 type
 
+  { Backend actually used to grab global hotkeys. Chosen once at
+    construction so registration and unregistration always agree, even if
+    the environment changes at runtime. }
+  TUnixHotkeyBackend = (uhbNone, uhbX11, uhbPortal);
+
   { TUnixHotkeyManager }
 
   TUnixHotkeyManager = class(TBaseHotkeyManager)
   private
     FDisplay: PDisplay;
+    FPortal: TPortalHotkeyEngine;
+    FPortalTimer: TTimer;
+    FBackend: TUnixHotkeyBackend;
+    FLastTrigger: String;
 
     {$IFDEF GTK}
     FRoot: PGdkWindow;
@@ -83,13 +92,26 @@ type
     procedure AddEventFilter;
     procedure RemoveEventFilter;
     function InternalRegisterShortcut(AShortcut: TShortCutEx; ARegister: Boolean): Boolean;
+    function IsWaylandSession: Boolean;
+    function SelectBackend: TUnixHotkeyBackend;
+    function PortalRegister(AShortcut: TShortCutEx): Boolean;
+    function PortalUnregister(AShortcut: TShortCutEx): Boolean;
+    procedure PortalTimerTick(Sender: TObject);
   protected
     function DoRegister(Shortcut: TShortCutEx): Boolean; override;
     function DoUnregister(Shortcut: TShortCutEx): Boolean; override;
   public
     constructor Create; override;
+    destructor Destroy; override;
+
+    procedure RefreshNotify(Shortcut: TShortCut); override;
 
     function IsHotkeyAvailable(Shortcut: TShortCut): Boolean; override;
+
+    { Backend selected for this session (mostly for tests/diagnostics) }
+    property Backend: TUnixHotkeyBackend read FBackend;
+    { Trigger assigned by the portal on the last successful registration }
+    property LastPortalTrigger: String read FLastTrigger;
   end;
 
 {$IFDEF GTK}
@@ -253,6 +275,8 @@ begin
   begin
     Modifier := ShiftToMod(ShiftState);
     KeySym := KeyToSym(Key);
+    if KeySym = 0 then
+      Exit(False); // key the X11 backend cannot express
     KeyCode := XKeysymToKeycode(FDisplay, KeySym);
 
     {$IFDEF LCLGTK2}
@@ -274,7 +298,7 @@ begin
 
     ShiftSym := XKeycodeToKeysym(FDisplay, KeyCode, 1);
 
-    if KeySym <> ShiftSym then
+    if (ShiftSym <> 0) and (KeySym <> ShiftSym) then
     begin
       KeyCode := XKeysymToKeycode(FDisplay, ShiftSym);
 
@@ -543,12 +567,91 @@ end;
 
 function TUnixHotkeyManager.DoRegister(Shortcut: TShortCutEx): Boolean;
 begin
-  Result := InternalRegisterShortcut(Shortcut, True);
+  case FBackend of
+    uhbX11: Result := InternalRegisterShortcut(Shortcut, True);
+    uhbPortal: Result := PortalRegister(Shortcut);
+  else
+    Result := False; // no usable backend (e.g. Wayland without a portal)
+  end;
 end;
 
 function TUnixHotkeyManager.DoUnregister(Shortcut: TShortCutEx): Boolean;
 begin
-  Result := InternalRegisterShortcut(Shortcut, False);
+  case FBackend of
+    uhbX11: Result := InternalRegisterShortcut(Shortcut, False);
+    uhbPortal:
+      if FPortal <> nil then
+        Result := PortalUnregister(Shortcut)
+      else
+        Result := False;
+  else
+    Result := False;
+  end;
+end;
+
+procedure TUnixHotkeyManager.RefreshNotify(Shortcut: TShortCut);
+begin
+  // The portal backend looks the callback up live in its desired set, so a
+  // refresh must not trigger a session rebuild (that would spawn a dialog
+  // per registered shortcut, e.g. from THotkeyItemsList.RefreshRegs).
+  if FBackend = uhbPortal then
+    Exit;
+  inherited RefreshNotify(Shortcut);
+end;
+
+function TUnixHotkeyManager.IsWaylandSession: Boolean;
+begin
+  Result := (GetEnvironmentVariable('XDG_SESSION_TYPE') = 'wayland')
+    or (GetEnvironmentVariable('WAYLAND_DISPLAY') <> '');
+end;
+
+function TUnixHotkeyManager.SelectBackend: TUnixHotkeyBackend;
+begin
+  // XGrabKey only works on X11. On Wayland sessions (even with XWayland
+  // running) global grabs are ineffective: use the portal when possible.
+  if (FDisplay <> nil) and not IsWaylandSession then
+    Exit(uhbX11);
+  if PortalAvailable then
+    Exit(uhbPortal);
+  // Wayland without a portal: no backend can provide global shortcuts.
+  Result := uhbNone;
+end;
+
+procedure TUnixHotkeyManager.PortalTimerTick(Sender: TObject);
+begin
+  if FPortal <> nil then
+    FPortal.ProcessPending;
+end;
+
+function TUnixHotkeyManager.PortalRegister(AShortcut: TShortCutEx): Boolean;
+begin
+  if FPortal = nil then
+  begin
+    FPortal := TPortalHotkeyEngine.Create(Self);
+    // Read before the first registration.
+    FPortal.AppToken := AppToken;
+    FPortal.BindStrategy := PortalBindStrategy;
+  end;
+  FLastTrigger := '';
+  Result := FPortal.RegisterShortcut(AShortcut, FLastTrigger);
+  // Only poll once a shortcut is actually bound: the portal delivers
+  // Activated signals asynchronously, and the timer drains them from the
+  // main loop without needing a background thread.
+  if Result and (FPortalTimer = nil) then
+  begin
+    FPortalTimer := TTimer.Create(nil);
+    FPortalTimer.Interval := 25;
+    FPortalTimer.OnTimer := PortalTimerTick;
+    FPortalTimer.Enabled := True;
+  end;
+end;
+
+function TUnixHotkeyManager.PortalUnregister(AShortcut: TShortCutEx): Boolean;
+begin
+  FLastTrigger := '';
+  if FPortal = nil then
+    Exit(False);
+  Result := FPortal.UnregisterShortcut(AShortcut);
 end;
 
 constructor TUnixHotkeyManager.Create;
@@ -570,6 +673,32 @@ begin
   if FDisplay <> nil then
     FQNativeEventFilter := QNativeEventFilter_hook_Create(QCoreApplication_instance());
   {$ENDIF}
+
+  // Probe the portal only when X11 cannot be used, to avoid a needless
+  // session-bus connection on a plain X11 desktop.
+  FBackend := SelectBackend;
+end;
+
+destructor TUnixHotkeyManager.Destroy;
+begin
+  // Stop polling before tearing the portal engine down.
+  if FPortalTimer <> nil then
+  begin
+    FPortalTimer.Enabled := False;
+    FreeAndNil(FPortalTimer);
+  end;
+  // A per-shortcut unregistration would rebuild the whole portal session
+  // once per hotkey (with a possible dialog each time): release it once.
+  if (FBackend = uhbPortal) and (FPortal <> nil) then
+    FPortal.Reset;
+  // inherited unregisters everything (needs FPortal alive), then free it
+  inherited Destroy;
+  FreeAndNil(FPortal);
+  if FDisplay <> nil then
+  begin
+    XCloseDisplay(FDisplay);
+    FDisplay := nil;
+  end;
 end;
 
 function TUnixHotkeyManager.IsHotkeyAvailable(Shortcut: TShortCut): Boolean;
