@@ -52,7 +52,7 @@ begin
     HotKey1.Enabled := False;
   end
   else
-    ShowMessage('Cannot register hotkey (global hotkeys need X11 and a free shortcut).');
+    ShowMessage('Cannot register hotkey (needs X11 or a Wayland portal with approval, plus a free shortcut).');
 end;
 
 procedure TForm1.Button2Click(Sender: TObject);

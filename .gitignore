@@ -49,6 +49,10 @@ lib/
 /tests/AsuiteCompsTests
 /tests/AsuiteCompsTests.exe
 
+# Sample binaries (built by lazarus/lazbuild)
+/samples/THotkeyManager/THotkeyManager
+/samples/TButtonedEdit/tbuttonededit
+
 # ShortcutGrabber default button images are source, not generated:
 # keep the embedded resource file despite the global *.lrs rule.
 !visual/ShortcutGrabber.lrs
