@@ -12,7 +12,7 @@ platform hotkey managers.
 | `AsuiteCompsTests.lpr` / `.lpi` | Console runner (exit code <> 0 on failure) |
 | `Tests.ShortcutEx.pas` | `Hotkeys.ShortcutEx` |
 | `Tests.HotkeysManager.pas` | `TBaseHotkeyManager` via a fake `DoRegister`/`DoUnregister` manager (no OS calls) |
-| `Tests.HotkeyControl.pas` | `THotKey` (via a cracker class) and the `TShortcutCapture` engine |
+| `Tests.HotkeyControl.pas` | `THotKey` (via a cracker class) and the `TShortcutCapture` engine (including the `ssSuper` → `ssMeta` folding) |
 | `Tests.ShortcutGrabber.pas` | `TfrmShortcutGrabber` images, hotkey/button round-trip and `ShortcutGrabberDefaults` |
 | `Tests.HotKeyEdit.pas` | `THotKeyEdit` value/text sync, clear, events and right-button state |
 | `Tests.ButtonedEdit.pas` | `TButtonedEdit` properties, events and button options |
@@ -38,9 +38,10 @@ and `xvfb-run` is available, the script re-executes itself under
 
 ## Run in CI
 
-`.github/workflows/main.yml` and `main_release.yml` run this suite for
-every matrix entry (Windows + Linux GTK2/GTK3/Qt5/Qt6) before building
-ASuite. Any test failure fails the job.
+In this repository `.github/workflows/tests.yml` runs the suite on every push
+and pull request for each matrix entry (Windows + Linux GTK2/GTK3/Qt5/Qt6).
+Keep this suite green before updating any consumer that pins this package
+through a submodule.
 
 ## Notes
 
@@ -62,6 +63,10 @@ ASuite. Any test failure fails the job.
   it is registered in the current session. The platform manager overrides
   `RefreshNotify` so `THotkeyItemsList.RefreshRegs` does not rebind per
   shortcut.
+- The Qt backend uses the native event filter exposed by LCL's Qt binding
+  (`QNativeEventFilter_hook`): the package ships no Qt helper library and no
+  local `xcb` binding, and reads the few needed `xcb_key_press_event` fields
+  directly.
 - `Tests.Portal.TestLivePortalRoundTrip` (opt-in, `ASUITECOMPS_TEST_PORTAL=1`)
   also checks KDE's KGlobalAccel to confirm the shortcut is listed while
   registered and gone after `UnregisterShortcut`; the check is skipped when

@@ -1,7 +1,6 @@
 # ASuiteComps
 
-FreePascal/Lazarus cross-platform components and libraries for
-[ASuite](https://github.com/salvadorbs/Asuite).
+FreePascal/Lazarus cross-platform components and libraries.
 
 ## Contents
 
@@ -20,9 +19,13 @@ Libraries:
 | Unit | Description |
 |---|---|
 | `library/Hotkeys.ShortcutEx.pas` | `TShortcutEx`: shortcut value object (key, modifiers, tag, notify callback) |
-| `library/Hotkeys.Manager.pas` | `TBaseHotkeyManager`: OS-independent global-hotkey list management |
+| `library/Hotkeys.Manager.pas` | `TBaseHotkeyManager`: OS-independent global-hotkey list management (`AppToken`, `PortalBindStrategy`) |
 | `library/platform/win/Hotkeys.Manager.Platform.pas` | Windows implementation (`RegisterHotKey`, one message window per manager) |
 | `library/platform/unix/Hotkeys.Manager.Platform.pas` | Unix implementation (X11 `XGrabKey`; GTK2/GTK3/Qt5/Qt6). `IsHotkeyAvailable` probes X11; safely dormant when no X11 display exists (e.g. pure Wayland) |
+| `library/Hotkeys.Manager.Portal.pas` | Wayland `GlobalShortcuts` portal backend (freedesktop portal over `libdbus`), selected when X11 is unavailable |
+
+Qt uses the native event filter provided by LCL's Qt binding, so no external
+helper library and no local `xcb` binding are required.
 
 ## Shortcut grabber
 
@@ -115,7 +118,7 @@ customizable through `TPicture` properties:
 - `ShortcutGrabberDefaults.Images` — process-wide images, used when the
   per-instance picture is empty;
 - embedded defaults — Lazarus resources (`asuite_ctrl`, `asuite_alt`,
-  `asuite_shift`, `asuite_winkey`) shipped with the default ASuite theme.
+  `asuite_shift`, `asuite_winkey`) shipped with the package's default theme.
 
 The application decides which images to use: the component never reads a
 theme folder by itself. Assign them however you prefer (`TPicture` handles
@@ -135,8 +138,8 @@ The lookup order is: per-instance `TPicture` → `ShortcutGrabberDefaults.Images
 → embedded Lazarus resource. Missing images never raise an error.
 
 At runtime only the compiled resource `visual/ShortcutGrabber.lrs` is used.
-`visual/buttons/` keeps the four source PNGs (byte-identical to the default
-ASuite theme) so the `.lrs` can be regenerated from this repository alone
+`visual/buttons/` keeps the four source PNGs (byte-identical to the compiled
+resources) so the `.lrs` can be regenerated from this repository alone
 with `lazres`:
 
 ```bash
@@ -145,7 +148,7 @@ lazres ShortcutGrabber.lrs buttons/asuite_ctrl.png buttons/asuite_alt.png \
   buttons/asuite_shift.png buttons/asuite_winkey.png
 ```
 
-The four PNGs are the button images of the default ASuite theme and are
+The four PNGs are the button images of the package's default theme and are
 distributed under the same GPL v3+ license as the rest of the package.
 
 ### Process-wide defaults
@@ -172,11 +175,32 @@ taken (returning `False` keeps the dialog open and shows the "not available"
 message). When it is `nil`, no check is performed, so the component stays
 independent from the global hotkey manager.
 
+## Global hotkeys
+
+`HotkeyManager` (from `Hotkeys.Manager.Platform`) returns the platform
+manager that binds shortcuts system-wide:
+
+- Windows — `RegisterHotKey` on a message window owned by the manager;
+- Unix — X11 `XGrabKey` on GTK2, GTK3, Qt5 and Qt6 (the key events are
+  filtered through the widgetset: a GDK filter for GTK, the native event
+  filter of LCL's Qt binding for Qt);
+- Wayland without X11 — the freedesktop `GlobalShortcuts` portal over
+  `libdbus` (`Hotkeys.Manager.Portal`). The application must pump
+  `ProcessPending` from its main loop; the manager already installs a timer.
+
+`TBaseHotkeyManager.AppToken` (namespacing, frozen after the first
+registration on the portal) and `TBaseHotkeyManager.PortalBindStrategy`
+(`pbsAuto` / `pbsSpecCompliant` / `pbsIncremental`) tune the portal backend.
+
 ## Requirements
 
-- Lazarus + FPC (see [ASuite BUILD.md](https://github.com/salvadorbs/Asuite/blob/develop/BUILD.md))
+- Lazarus + FPC (see the Lazarus
+  [installer](https://www.lazarus-ide.org/index.php?page=downloads) and the
+  [Free Pascal documentation](https://www.freepascal.org/docs.html))
 - [BGRABitmap](https://github.com/bgrabitmap/bgrabitmap) (`BGRABitmapPack`)
 - [BGRAControls](https://github.com/bgrabitmap/bgracontrols)
+- Linux: `libdbus-1` development files (`libdbus-1-dev` / `dbus-devel`),
+  linked by the Wayland portal backend
 
 ## Install in the IDE
 
@@ -207,4 +231,4 @@ Windows and Linux (GTK2/GTK3/Qt5/Qt6) at every push and pull request.
 
 ## License
 
-GNU General Public License v3.0 or later, like ASuite.
+GNU General Public License v3.0 or later.
