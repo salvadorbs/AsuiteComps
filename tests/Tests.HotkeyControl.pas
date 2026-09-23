@@ -29,7 +29,6 @@ type
   published
     procedure TestDefaults;
     procedure TestHotkeyRoundTrip;
-    procedure TestModifiersRoundTrip;
     procedure TestPlainKeyGetsCtrl;
     procedure TestNoModifierKeepsPlainKey;
     procedure TestShiftKept;
@@ -37,9 +36,13 @@ type
     procedure TestDeleteClears;
     procedure TestOnChangeFired;
     procedure TestOnChangeNotFiredWithoutInput;
-    procedure TestSetHotkeyValueNotifies;
-    procedure TestSetHotkeyValueNoNotify;
-    procedure TestSetHotkeyValueUnchanged;
+    procedure TestHotkeySetterNotifies;
+    procedure TestHotkeySetterUnchanged;
+    { TShortcutCapture (non-visual engine) }
+    procedure TestCapturePlainKeyGetsCtrl;
+    procedure TestCaptureNoModifierKeepsPlainKey;
+    procedure TestCaptureClearKey;
+    procedure TestCaptureShiftKept;
   end;
 
 implementation
@@ -98,19 +101,6 @@ begin
   try
     H.Hotkey := ShortCut(VK_F5, [ssCtrl]);
     AssertEquals('Hotkey', Integer(ShortCut(VK_F5, [ssCtrl])), Integer(H.Hotkey));
-  finally
-    H.Free;
-  end;
-end;
-
-procedure TTestHotkeyControl.TestModifiersRoundTrip;
-var
-  H: THotKeyCracker;
-begin
-  H := THotKeyCracker.Create(nil);
-  try
-    H.Modifiers := [hkCtrl, hkAlt];
-    AssertTrue('Modifiers', H.Modifiers = THKModifiers([hkCtrl, hkAlt]));
   finally
     H.Free;
   end;
@@ -216,14 +206,14 @@ begin
   end;
 end;
 
-procedure TTestHotkeyControl.TestSetHotkeyValueNotifies;
+procedure TTestHotkeyControl.TestHotkeySetterNotifies;
 var
   H: THotKeyCracker;
 begin
   H := THotKeyCracker.Create(nil);
   try
     H.OnChange := @OnChanged;
-    H.SetHotkeyValue(ShortCut(VK_F5, [ssCtrl]), True);
+    H.Hotkey := ShortCut(VK_F5, [ssCtrl]);
     AssertEquals('Hotkey set', Integer(ShortCut(VK_F5, [ssCtrl])), Integer(H.Hotkey));
     AssertEquals('OnChange fired', 1, FChanged);
   finally
@@ -231,33 +221,72 @@ begin
   end;
 end;
 
-procedure TTestHotkeyControl.TestSetHotkeyValueNoNotify;
+procedure TTestHotkeyControl.TestHotkeySetterUnchanged;
 var
   H: THotKeyCracker;
 begin
   H := THotKeyCracker.Create(nil);
   try
+    H.Hotkey := ShortCut(VK_F5, [ssCtrl]);
     H.OnChange := @OnChanged;
-    H.SetHotkeyValue(ShortCut(VK_F5, [ssCtrl]), False);
-    AssertEquals('Hotkey set', Integer(ShortCut(VK_F5, [ssCtrl])), Integer(H.Hotkey));
-    AssertEquals('OnChange not fired', 0, FChanged);
+    H.Hotkey := ShortCut(VK_F5, [ssCtrl]);
+    AssertEquals('OnChange not fired for same value', 0, FChanged);
   finally
     H.Free;
   end;
 end;
 
-procedure TTestHotkeyControl.TestSetHotkeyValueUnchanged;
+procedure TTestHotkeyControl.TestCapturePlainKeyGetsCtrl;
 var
-  H: THotKeyCracker;
+  C: TShortcutCapture;
 begin
-  H := THotKeyCracker.Create(nil);
+  C := TShortcutCapture.Create;
   try
-    H.SetHotkeyValue(ShortCut(VK_F5, [ssCtrl]), False);
-    H.OnChange := @OnChanged;
-    H.SetHotkeyValue(ShortCut(VK_F5, [ssCtrl]), True);
-    AssertEquals('OnChange not fired for same value', 0, FChanged);
+    C.Capture(VK_A, []);
+    AssertEquals('Ctrl added', Integer(ShortCut(VK_A, [ssCtrl])), Integer(C.Hotkey));
   finally
-    H.Free;
+    C.Free;
+  end;
+end;
+
+procedure TTestHotkeyControl.TestCaptureNoModifierKeepsPlainKey;
+var
+  C: TShortcutCapture;
+begin
+  C := TShortcutCapture.Create;
+  try
+    C.NoModifier := True;
+    C.Capture(VK_F5, []);
+    AssertEquals('Plain key kept', Integer(ShortCut(VK_F5, [])), Integer(C.Hotkey));
+  finally
+    C.Free;
+  end;
+end;
+
+procedure TTestHotkeyControl.TestCaptureClearKey;
+var
+  C: TShortcutCapture;
+begin
+  C := TShortcutCapture.Create;
+  try
+    C.Hotkey := ShortCut(VK_A, [ssCtrl]);
+    C.Capture(VK_BACK, []);
+    AssertEquals('Cleared', 0, Integer(C.Hotkey));
+  finally
+    C.Free;
+  end;
+end;
+
+procedure TTestHotkeyControl.TestCaptureShiftKept;
+var
+  C: TShortcutCapture;
+begin
+  C := TShortcutCapture.Create;
+  try
+    C.Capture(VK_F5, [ssShift]);
+    AssertEquals('Shift kept', Integer(ShortCut(VK_F5, [ssShift])), Integer(C.Hotkey));
+  finally
+    C.Free;
   end;
 end;
 

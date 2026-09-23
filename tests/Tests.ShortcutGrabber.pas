@@ -27,6 +27,9 @@ type
     procedure TestFormImageFromDefaults;
     procedure TestFormMessages;
     procedure TestFormTargetHotKeyInit;
+    procedure TestTargetHotKeyConfirmUpdates;
+    procedure TestTargetHotKeyCancelKeeps;
+    procedure TestTargetHotKeyClearedOnDestroy;
   end;
 
 implementation
@@ -250,6 +253,70 @@ begin
       Integer(Control.Hotkey), Integer(Form.Hotkey));
     AssertTrue('Ctrl pressed', Form.btnCtrl.Pressed);
     AssertTrue('Alt pressed', Form.btnAlt.Pressed);
+  finally
+    Form.Free;
+    Control.Free;
+  end;
+end;
+
+procedure TTestShortcutGrabber.TestTargetHotKeyConfirmUpdates;
+var
+  Form: TfrmShortcutGrabber;
+  Control: THotKey;
+begin
+  Control := THotKey.Create(nil);
+  Form := TfrmShortcutGrabber.Create(nil);
+  try
+    Control.Hotkey := ShortCut(VK_F5, [ssCtrl]);
+    Form.TargetHotKey := Control;
+
+    //Simulate choosing Shift+F9 in the dialog and confirming
+    Form.hkKeys.Hotkey := ShortCut(VK_F9, [ssShift]);
+    Form.btnOkClick(nil);
+
+    AssertEquals('Target updated',
+      Integer(ShortCut(VK_F9, [ssShift])), Integer(Control.Hotkey));
+  finally
+    Form.Free;
+    Control.Free;
+  end;
+end;
+
+procedure TTestShortcutGrabber.TestTargetHotKeyCancelKeeps;
+var
+  Form: TfrmShortcutGrabber;
+  Control: THotKey;
+begin
+  Control := THotKey.Create(nil);
+  Form := TfrmShortcutGrabber.Create(nil);
+  try
+    Control.Hotkey := ShortCut(VK_F5, [ssCtrl]);
+    Form.TargetHotKey := Control;
+
+    Form.hkKeys.Hotkey := ShortCut(VK_F9, [ssShift]);
+    Form.btnCancelClick(nil);
+
+    AssertEquals('Target unchanged',
+      Integer(ShortCut(VK_F5, [ssCtrl])), Integer(Control.Hotkey));
+  finally
+    Form.Free;
+    Control.Free;
+  end;
+end;
+
+procedure TTestShortcutGrabber.TestTargetHotKeyClearedOnDestroy;
+var
+  Form: TfrmShortcutGrabber;
+  Control: THotKey;
+begin
+  Control := THotKey.Create(nil);
+  Form := TfrmShortcutGrabber.Create(nil);
+  try
+    Form.TargetHotKey := Control;
+    Control.Free;
+    Control := nil;
+
+    AssertTrue('Target cleared', Form.TargetHotKey = nil);
   finally
     Form.Free;
     Control.Free;

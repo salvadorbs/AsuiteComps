@@ -67,6 +67,9 @@ type
     FAlt: TPicture;
     FShift: TPicture;
     FWinKey: TPicture;
+    FOnChange: TNotifyEvent;
+
+    procedure PictureChanged(Sender: TObject);
   public
     constructor Create;
     destructor Destroy; override;
@@ -75,6 +78,9 @@ type
     procedure Clear;
     function IsEmpty: Boolean;
     function GetPicture(AKind: TShortcutImageKind): TPicture;
+
+    { Fired whenever one of the four pictures changes. }
+    property OnChange: TNotifyEvent read FOnChange write FOnChange;
   published
     property Ctrl: TPicture read FCtrl;
     property Alt: TPicture read FAlt;
@@ -124,11 +130,14 @@ type
     procedure FormCloseQuery(Sender: TObject; var CanClose: Boolean);
     procedure FormKeyPress(Sender: TObject; var Key: char);
     procedure hkKeysChange(Sender: TObject);
+  protected
+    procedure Notification(AComponent: TComponent; Operation: TOperation); override;
   private
     FHotkey: TShortCut;
     FCanClose: Boolean;
     FTargetHotKey: THotKey;
     FImages: TShortcutGrabberImages;
+    FUpdatingKeys: Boolean;
     FOnValidateHotkey: TShortcutValidateEvent;
     FMessageNoKey: string;
     FMessageNoModifier: string;
@@ -147,6 +156,12 @@ type
     procedure SetHotkey(AValue: TShortCut);
     procedure SetTargetHotKey(AValue: THotKey);
     procedure ApplyToTarget;
+    procedure ImagesChanged(Sender: TObject);
+
+    function GetCtrlImage: TPicture;
+    function GetAltImage: TPicture;
+    function GetShiftImage: TPicture;
+    function GetWinKeyImage: TPicture;
 
     function EffectivePicture(AKind: TShortcutImageKind): TPicture;
     procedure ApplyImageToButton(AButton: TBCImageButton; APicture: TPicture;
@@ -164,8 +179,14 @@ type
     property TargetHotKey: THotKey read FTargetHotKey write SetTargetHotKey;
 
     { Per-instance images. Empty pictures fall back to ShortcutGrabberDefaults
-      and then to the embedded defaults. }
+      and then to the embedded defaults. Changing a picture reloads the button
+      automatically. }
     property Images: TShortcutGrabberImages read FImages;
+    property CtrlImage: TPicture read GetCtrlImage;
+    property AltImage: TPicture read GetAltImage;
+    property ShiftImage: TPicture read GetShiftImage;
+    property WinKeyImage: TPicture read GetWinKeyImage;
+
     property OnValidateHotkey: TShortcutValidateEvent read GetValidateHotkey write FOnValidateHotkey;
     property MessageNoKey: string read GetMessageNoKey write FMessageNoKey;
     property MessageNoModifier: string read GetMessageNoModifier write FMessageNoModifier;
@@ -176,6 +197,13 @@ type
 
     { (Re)loads the four button images using the current configuration. }
     procedure LoadImages;
+
+    { Shows the dialog starting from AInitialHotkey. Returns True when the user
+      confirms; AHotkey is then the chosen shortcut. Returns False when the
+      dialog is cancelled (AHotkey is left as AInitialHotkey). }
+    class function TryExecute(AOwner: TComponent; AInitialHotkey: TShortCut;
+      out AHotkey: TShortCut;
+      AValidate: TShortcutValidateEvent = nil): Boolean; overload;
 
     { Standalone entry point: shows the dialog starting from AHotkey and returns
       the chosen shortcut (0 when cancelled). }
@@ -211,6 +239,17 @@ begin
   FAlt    := TPicture.Create;
   FShift  := TPicture.Create;
   FWinKey := TPicture.Create;
+
+  FCtrl.OnChange   := PictureChanged;
+  FAlt.OnChange    := PictureChanged;
+  FShift.OnChange  := PictureChanged;
+  FWinKey.OnChange := PictureChanged;
+end;
+
+procedure TShortcutGrabberImages.PictureChanged(Sender: TObject);
+begin
+  if Assigned(FOnChange) then
+    FOnChange(Self);
 end;
 
 destructor TShortcutGrabberImages.Destroy;
@@ -285,6 +324,7 @@ end;
 constructor TfrmShortcutGrabber.Create(AOwner: TComponent);
 begin
   FImages := TShortcutGrabberImages.Create;
+  FImages.OnChange := ImagesChanged;
   inherited Create(AOwner);
 end;
 
@@ -370,15 +410,61 @@ end;
 
 procedure TfrmShortcutGrabber.SetTargetHotKey(AValue: THotKey);
 begin
+  if FTargetHotKey = AValue then
+    Exit;
+
+  if FTargetHotKey <> nil then
+    FTargetHotKey.RemoveFreeNotification(Self);
+
   FTargetHotKey := AValue;
-  if Assigned(FTargetHotKey) then
+
+  if FTargetHotKey <> nil then
+  begin
+    FTargetHotKey.FreeNotification(Self);
     Hotkey := FTargetHotKey.Hotkey;
+  end;
+end;
+
+procedure TfrmShortcutGrabber.Notification(AComponent: TComponent;
+  Operation: TOperation);
+begin
+  inherited Notification(AComponent, Operation);
+
+  if (Operation = opRemove) and (AComponent = FTargetHotKey) then
+    FTargetHotKey := nil;
 end;
 
 procedure TfrmShortcutGrabber.ApplyToTarget;
 begin
   if Assigned(FTargetHotKey) then
-    FTargetHotKey.SetHotkeyValue(FHotkey, True);
+    FTargetHotKey.Hotkey := FHotkey;
+end;
+
+procedure TfrmShortcutGrabber.ImagesChanged(Sender: TObject);
+begin
+  if not (csLoading in ComponentState) and
+    not (csDestroying in ComponentState) then
+    LoadImages;
+end;
+
+function TfrmShortcutGrabber.GetCtrlImage: TPicture;
+begin
+  Result := FImages.Ctrl;
+end;
+
+function TfrmShortcutGrabber.GetAltImage: TPicture;
+begin
+  Result := FImages.Alt;
+end;
+
+function TfrmShortcutGrabber.GetShiftImage: TPicture;
+begin
+  Result := FImages.Shift;
+end;
+
+function TfrmShortcutGrabber.GetWinKeyImage: TPicture;
+begin
+  Result := FImages.WinKey;
 end;
 
 function TfrmShortcutGrabber.GetMessageNoKey: string;
@@ -469,10 +555,19 @@ var
   Key: Word;
   Modi: TShiftState;
 begin
-  //Separate key and modifiers coming from THotKey and reflect them on the GUI
-  ShortCutToKey(hkKeys.Hotkey, Key, Modi);
-  SetGUIModifierFromShiftState(Modi);
-  SetGUIKeyFromKey(Key);
+  //SetGUIKeyFromKey re-assigns hkKeys.Hotkey and would fire this handler again
+  if FUpdatingKeys then
+    Exit;
+
+  FUpdatingKeys := True;
+  try
+    //Separate key and modifiers coming from THotKey and reflect them on the GUI
+    ShortCutToKey(hkKeys.Hotkey, Key, Modi);
+    SetGUIModifierFromShiftState(Modi);
+    SetGUIKeyFromKey(Key);
+  finally
+    FUpdatingKeys := False;
+  end;
 end;
 
 function TfrmShortcutGrabber.EffectivePicture(AKind: TShortcutImageKind): TPicture;
@@ -541,26 +636,42 @@ begin
   ApplyImageToButton(btnWinKey, EffectivePicture(sikWinKey), SHORTCUT_WINKEY_RES);
 end;
 
-class function TfrmShortcutGrabber.Execute(AOwner: TComponent; AHotkey: TShortCut;
-  AValidate: TShortcutValidateEvent): TShortCut;
+class function TfrmShortcutGrabber.TryExecute(AOwner: TComponent;
+  AInitialHotkey: TShortCut; out AHotkey: TShortCut;
+  AValidate: TShortcutValidateEvent): Boolean;
 var
   Form: TfrmShortcutGrabber;
 begin
-  Result := 0;
+  AHotkey := AInitialHotkey;
+  Result := False;
 
   Form := TfrmShortcutGrabber.Create(AOwner);
   try
     if Assigned(AValidate) then
       Form.OnValidateHotkey := AValidate;
 
-    Form.Hotkey := AHotkey;
+    Form.Hotkey := AInitialHotkey;
     Form.LoadImages;
 
     if Form.ShowModal = mrOk then
-      Result := Form.Hotkey;
+    begin
+      AHotkey := Form.Hotkey;
+      Result := True;
+    end;
   finally
     Form.Free;
   end;
+end;
+
+class function TfrmShortcutGrabber.Execute(AOwner: TComponent; AHotkey: TShortCut;
+  AValidate: TShortcutValidateEvent): TShortCut;
+var
+  Chosen: TShortCut;
+begin
+  if TfrmShortcutGrabber.TryExecute(AOwner, AHotkey, Chosen, AValidate) then
+    Result := Chosen
+  else
+    Result := 0;
 end;
 
 class function TfrmShortcutGrabber.Execute(AOwner: TComponent;

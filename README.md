@@ -33,7 +33,11 @@ together or independently.
 
 `THotKey` is the low-level capture control: the shortcut is typed directly
 into it (`NoModifier` allows a bare key). It is also the capture engine used
-inside `TfrmShortcutGrabber`.
+inside `TfrmShortcutGrabber`. Setting `Hotkey` programmatically fires
+`OnChange` (and does nothing when the value is unchanged).
+
+The capture rules live in the non-visual `TShortcutCapture` class
+(`visual/HotKey.pas`), so they can be reused and tested without a control.
 
 ```pascal
 HotKey1.OnChange := @HotKey1Change;
@@ -45,15 +49,20 @@ dialog explicitly.
 
 ### Standalone dialog
 
+`TryExecute` distinguishes "confirmed" from "cancelled" and returns the chosen
+value through an `out` parameter:
+
 ```pascal
 var
   Shortcut: TShortCut;
 begin
-  Shortcut := TfrmShortcutGrabber.Execute(Self, TextToShortCut(Edit1.Text));
-  if Shortcut <> 0 then
+  if TfrmShortcutGrabber.TryExecute(Self, TextToShortCut(Edit1.Text), Shortcut) then
     Edit1.Text := ShortCutToText(Shortcut);
 end;
 ```
+
+`Execute` is the historical shortcut: it returns the chosen shortcut, or `0`
+when the dialog is cancelled.
 
 A string-based overload is available too:
 
@@ -118,6 +127,10 @@ Grabber.Images.Alt.Assign(MyPng);
 ShortcutGrabberDefaults.Images.WinKey.Clear; // fall back to the default
 ```
 
+Changing a picture reloads the corresponding button automatically
+(`TShortcutGrabberImages.OnChange`). For convenience the form also exposes
+`CtrlImage`, `AltImage`, `ShiftImage` and `WinKeyImage` aliases.
+
 The lookup order is: per-instance `TPicture` → `ShortcutGrabberDefaults.Images`
 → embedded Lazarus resource. Missing images never raise an error.
 
@@ -129,6 +142,9 @@ cd visual
 lazres ShortcutGrabber.lrs buttons/asuite_ctrl.png buttons/asuite_alt.png \
   buttons/asuite_shift.png buttons/asuite_winkey.png
 ```
+
+The four PNGs are the button images of the default ASuite theme and are
+distributed under the same GPL v3+ license as the rest of the package.
 
 ### Process-wide defaults
 
@@ -167,7 +183,7 @@ independent from the global hotkey manager.
 
 ## Automated tests
 
-The `tests/` directory holds an FPCUnit suite (92 tests) covering every
+The `tests/` directory holds an FPCUnit suite (108 tests) covering every
 component, the hotkey manager logic and the platform managers:
 
 ```bash

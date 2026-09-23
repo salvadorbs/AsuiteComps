@@ -38,7 +38,6 @@ object frmShortcutGrabber: TfrmShortcutGrabber
       Width = 121
       TabOrder = 0
       Hotkey = 0
-      Modifiers = []
       NoModifier = True
       OnChange = hkKeysChange
     end

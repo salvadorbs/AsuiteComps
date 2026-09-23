@@ -21,32 +21,50 @@ uses
   Classes, SysUtils, LResources, Forms, Controls, Graphics, Dialogs, Menus, {$IFDEF Windows}Windows,{$ENDIF} LMessages, LCLIntf, LCLType, LCLProc, LazLogger;
 
 type
-  THKModifier = (
-    hkShift,
-    hkCtrl,
-    hkAlt,
-    hkExt
-  );
+  { Non-visual shortcut capture engine. It turns a key + shift state into a
+    TShortCut using the same rules as THotKey:
+      - Backspace/Delete without modifiers clear the shortcut;
+      - a bare key gets Ctrl unless NoModifier is set.
+    Keeping this logic out of the control makes it reusable and testable. }
+  TShortcutCapture = class
+  private
+    FHotkey: TShortCut;
+    FNoModifier: Boolean;
+    FOnChange: TNotifyEvent;
+    procedure SetHotkey(AValue: TShortCut);
+  public
+    constructor Create;
 
-  THKModifiers = set of THKModifier;
+    { True when the key clears the shortcut (Backspace/Delete, no modifiers). }
+    function IsClearKey(AKey: Word; AShift: TShiftState): Boolean;
+    { Builds the shortcut for a key press, applying NoModifier. }
+    function MakeShortcut(AKey: Word; AShift: TShiftState): TShortCut;
+    { Captures a key press, updating Hotkey and firing OnChange. }
+    procedure Capture(AKey: Word; AShift: TShiftState);
+
+    property Hotkey: TShortCut read FHotkey write SetHotkey;
+    property NoModifier: Boolean read FNoModifier write FNoModifier;
+    property OnChange: TNotifyEvent read FOnChange write FOnChange;
+  end;
 
   { Low-level shortcut capture control: the shortcut is always typed directly
     into the control. To pick a shortcut through the modal dialog use
     THotKeyEdit, which wraps TfrmShortcutGrabber. }
   THotKey = class(TCustomControl)
   private
-    FHotkey: TShortCut;
-    FModifiers: THKModifiers;
-    FLastPressed: TShortCut;
-    FNoModifier: Boolean;
-    FOnChange: TNotifyEvent;
+    FCapture: TShortcutCapture;
 
     FBackgroundColor: TColor;
-    FBorderColor: TColor;  
+    FBorderColor: TColor;
     FTextColor: TColor;
     FAcceptsInput: Boolean;
+    FOnChange: TNotifyEvent;
 
-    function GetCharFromVirtualKey(Key: Word): String;
+    function GetHotkey: TShortCut;
+    procedure SetHotkey(AValue: TShortCut);
+    function GetNoModifier: Boolean;
+    procedure SetNoModifier(AValue: Boolean);
+    procedure CaptureChanged(Sender: TObject);
   protected
 {    procedure CreateParams(var Params: TCreateParams); override;}
     procedure DoEnter; override;
@@ -55,18 +73,12 @@ type
     procedure MouseDown(Button: TMouseButton; Shift:TShiftState; X,Y:Integer); override;
     procedure KeyDown(var Key: Word; Shift: TShiftState); override;
     procedure KeyUp(var Key: Word; Shift: TShiftState); override;
-
-    property LastPressed: TShortcut read FLastPressed write FLastPressed;
   public
     constructor Create(AOwner: TComponent); override;
+    destructor Destroy; override;
     procedure Paint; override;
     procedure EditingDone; override;
-
-    { Sets Hotkey and, when ANotify is True, fires OnChange. Does nothing when
-      the value is unchanged. Used by TfrmShortcutGrabber when bound to this
-      control through TargetHotKey. }
-    procedure SetHotkeyValue(AValue: TShortCut; ANotify: Boolean = True);
-  published        
+  published
     property Align;
     property Anchors;
     property Font;
@@ -79,9 +91,8 @@ type
     property TabOrder;
     property TabStop stored false default true;
     property AutoSize;
-    property Hotkey: TShortcut read FHotkey write FHotkey;
-    property Modifiers: THKModifiers read FModifiers write FModifiers;
-    property NoModifier: Boolean read FNoModifier write FNoModifier;
+    property Hotkey: TShortcut read GetHotkey write SetHotkey;
+    property NoModifier: Boolean read GetNoModifier write SetNoModifier;
     property OnChange: TNotifyEvent read FOnChange write FOnChange;
   end;
 
@@ -94,17 +105,73 @@ begin
   RegisterComponents('ASuite Components',[THotKey]);
 end;
 
+{ TShortcutCapture }
+
+constructor TShortcutCapture.Create;
+begin
+  inherited Create;
+  FHotkey := 0;
+  FNoModifier := False;
+end;
+
+procedure TShortcutCapture.SetHotkey(AValue: TShortCut);
+begin
+  if FHotkey = AValue then
+    Exit;
+
+  FHotkey := AValue;
+
+  if Assigned(FOnChange) then
+    FOnChange(Self);
+end;
+
+function TShortcutCapture.IsClearKey(AKey: Word; AShift: TShiftState): Boolean;
+begin
+  Result := ((AKey = VK_BACK) or (AKey = VK_DELETE)) and
+    ((AShift * [ssShift, ssAlt, ssCtrl, ssMeta]) = []);
+end;
+
+function TShortcutCapture.MakeShortcut(AKey: Word; AShift: TShiftState): TShortCut;
+var
+  Filtered: TShiftState;
+begin
+  Filtered := AShift * [ssShift, ssAlt, ssCtrl, ssMeta];
+  if (not FNoModifier) and (Filtered = []) then
+    Filtered := [ssCtrl];
+
+  Result := ShortCut(AKey, Filtered);
+end;
+
+procedure TShortcutCapture.Capture(AKey: Word; AShift: TShiftState);
+var
+  NewShortcut: TShortCut;
+begin
+  if IsClearKey(AKey, AShift) then
+    Hotkey := 0
+  else
+  begin
+    NewShortcut := MakeShortcut(AKey, AShift);
+    if ShortCutToText(NewShortcut) <> '' then
+      Hotkey := NewShortcut;
+  end;
+end;
+
+{ THotKey }
+
 constructor THotKey.Create(AOwner: TComponent);
 begin
   inherited Create(AOwner);
   ControlStyle := ControlStyle + [csCaptureMouse, csClickEvents, csRequiresKeyboardInput];
   BorderStyle := bsNone;
   FCursor := crIBeam;
-  FNoModifier := False;
   FBackgroundColor := clWindow;
   FTextColor := clCaptionText;
   FBorderColor := clBtnShadow;
   FAcceptsInput := False;
+
+  FCapture := TShortcutCapture.Create;
+  FCapture.OnChange := CaptureChanged;
+
   {FAutoSelect := True;
   FAutoSelected := False;
   FTextChangedByRealSetText := False;
@@ -115,17 +182,46 @@ begin
   FTextHint := '';}
 end;
 
+destructor THotKey.Destroy;
+begin
+  FCapture.Free;
+  inherited Destroy;
+end;
+
+function THotKey.GetHotkey: TShortCut;
+begin
+  Result := FCapture.Hotkey;
+end;
+
+procedure THotKey.SetHotkey(AValue: TShortCut);
+begin
+  FCapture.Hotkey := AValue;
+end;
+
+function THotKey.GetNoModifier: Boolean;
+begin
+  Result := FCapture.NoModifier;
+end;
+
+procedure THotKey.SetNoModifier(AValue: Boolean);
+begin
+  FCapture.NoModifier := AValue;
+end;
+
+procedure THotKey.CaptureChanged(Sender: TObject);
+begin
+  Invalidate;
+
+  if Assigned(FOnChange) then
+    FOnChange(Self);
+end;
+
 {procedure THotKey.CreateParams(var Params: TCreateParams);
 begin
   inherited;
 end;}
 
 procedure THotKey.DoEnter;
-var
-  Point: TPoint;
-  CharIndex: Integer;
-  Pt: Integer;
-  res: LResult;
 begin
   inherited;
   DebugLn('THotKey.DoEnter');
@@ -171,18 +267,6 @@ begin
   end;
 end;
 
-procedure THotKey.SetHotkeyValue(AValue: TShortCut; ANotify: Boolean);
-begin
-  if FHotkey = AValue then
-    Exit;
-
-  FHotkey := AValue;
-  Invalidate;
-
-  if ANotify and Assigned(FOnChange) then
-    FOnChange(Self);
-end;
-
 procedure THotKey.KeyDown(var Key: Word; Shift: TShiftState);
 begin
   inherited;
@@ -190,32 +274,14 @@ begin
 end;
 
 procedure THotKey.KeyUp(var Key: Word; Shift: TShiftState);
-var
-  filteredShiftState: TShiftState;
-  newShortCut: TShortCut;
 begin
   inherited;
   DebugLn('THotKey.KeyUp ' + IntToStr(Key));
 
   if FAcceptsInput then
     begin
-      filteredShiftState := Shift * [ssShift, ssAlt, ssCtrl, ssMeta];
-      if ((Key = 8) or (Key = 46)) and (filteredShiftState = []) then
-      begin
-        Hotkey := 0;
-      end else
-      begin
-        if not(FNoModifier) and (filteredShiftState = []) then
-          filteredShiftState := [ssCtrl];
+      FCapture.Capture(Key, Shift);
 
-        newShortCut := ShortCut(Key, filteredShiftState);
-        if (ShortCutToText(newShortCut) <> '') then
-          Hotkey := newShortCut;
-
-        if Assigned(FOnChange) then
-          FOnChange(Self);
-      end;
-                                
       FTextColor := clCaptionText;
       FAcceptsInput := False;
     end;
@@ -257,20 +323,6 @@ begin
   DebugLn('THotKey.EditingDone');
   Invalidate;
   inherited;
-end;
-
-function THotKey.GetCharFromVirtualKey(Key: Word): String;
-var
-  keyboardState: TKeyboardState;
-  asciiResult: Integer;
-  Shortcut: TShortCut;
-begin
-  Result := '';
-  if Key <> 0 then
-  begin
-    Shortcut := KeyToShortCut(Key, []);
-    Result := ShortCutToText(Shortcut);
-  end;
 end;
 
 end.

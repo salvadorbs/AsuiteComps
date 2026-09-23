@@ -74,10 +74,9 @@ var
 begin
   //THotKey captures directly; the dialog is opened explicitly here (in a real
   //app you would rather use THotKeyEdit, which opens it on click).
-  NewHotkey := TfrmShortcutGrabber.Execute(Self, HotKey1.Hotkey);
-  if NewHotkey <> 0 then
+  if TfrmShortcutGrabber.TryExecute(Self, HotKey1.Hotkey, NewHotkey) then
   begin
-    HotKey1.SetHotkeyValue(NewHotkey);
+    HotKey1.Hotkey := NewHotkey;
     ShowMessage('Selected: ' + ShortCutToText(HotKey1.Hotkey));
   end;
 end;

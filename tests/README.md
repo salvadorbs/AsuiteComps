@@ -12,7 +12,7 @@ platform hotkey managers.
 | `AsuiteCompsTests.lpr` / `.lpi` | Console runner (exit code <> 0 on failure) |
 | `Tests.ShortcutEx.pas` | `Hotkeys.ShortcutEx` |
 | `Tests.HotkeysManager.pas` | `TBaseHotkeyManager` via a fake `DoRegister`/`DoUnregister` manager (no OS calls) |
-| `Tests.HotkeyControl.pas` | `THotKey` (incl. `KeyUp` capture logic and `SetHotkeyValue` via a cracker class) |
+| `Tests.HotkeyControl.pas` | `THotKey` (via a cracker class) and the `TShortcutCapture` engine |
 | `Tests.ShortcutGrabber.pas` | `TfrmShortcutGrabber` images, hotkey/button round-trip and `ShortcutGrabberDefaults` |
 | `Tests.HotKeyEdit.pas` | `THotKeyEdit` value/text sync, clear, events and right-button state |
 | `Tests.ButtonedEdit.pas` | `TButtonedEdit` properties, events and button options |
