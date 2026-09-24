@@ -16,14 +16,13 @@ object Form1: TForm1
     OnClick = Button1Click
     TabOrder = 0
   end
-  object HotKey1: THotKey
+  object edtHotkey: THotKeyEdit
     Left = 16
     Height = 25
     Top = 54
     Width = 100
     TabOrder = 1
     Hotkey = 49228
-    NoModifier = False
   end
   object Label1: TLabel
     Left = 16
@@ -42,14 +41,5 @@ object Form1: TForm1
     Enabled = False
     OnClick = Button2Click
     TabOrder = 2
-  end
-  object btnChoose: TButton
-    Left = 16
-    Height = 25
-    Top = 96
-    Width = 100
-    Caption = 'Choose...'
-    OnClick = btnChooseClick
-    TabOrder = 3
   end
 end

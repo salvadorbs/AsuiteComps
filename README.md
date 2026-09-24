@@ -103,8 +103,9 @@ HotKeyEdit1.OnHotkeyChange := @HotKeyEdit1Change;  // fired when it changes
 
 - clicking the edit opens the grabber;
 - the right button clears the shortcut, or opens the grabber when empty;
-- `ClearImageIndex` / `ChooseImageIndex` pick the right-button glyphs
-  (`RightButton.Images` supplies the image list);
+- the right button has **default icons** (embedded in the package); a host that
+  wants different ones assigns `RightButton.Images` plus
+  `ClearImageIndex` / `ChooseImageIndex`, which then take precedence;
 - `ButtonVisibleOnlyWithHotkey` hides the button when no shortcut is set;
 - `OnValidateHotkey` is forwarded to the grabber (otherwise
   `ShortcutGrabberDefaults.OnValidateHotkey` applies).

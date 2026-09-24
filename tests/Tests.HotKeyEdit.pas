@@ -5,8 +5,8 @@ unit Tests.HotKeyEdit;
 interface
 
 uses
-  fpcunit, testregistry, Classes, SysUtils, Forms, Menus, LCLProc, LCLType,
-  HotKeyEdit;
+  fpcunit, testregistry, Classes, SysUtils, Forms, Controls, Menus, LCLProc,
+  LCLType, ImgList, HotKeyEdit;
 
 type
 
@@ -27,6 +27,7 @@ type
     procedure TestNoChangeNoEvent;
     procedure TestButtonAlwaysVisible;
     procedure TestButtonOnlyWithHotkey;
+    procedure TestDefaultIcons;
     procedure TestButtonImageIndex;
     procedure TestButtonImageIndexReset;
   end;
@@ -173,12 +174,37 @@ begin
   end;
 end;
 
-procedure TTestHotKeyEdit.TestButtonImageIndex;
+procedure TTestHotKeyEdit.TestDefaultIcons;
 var
   E: THotKeyEdit;
 begin
+  { Out of the box the right button has the embedded default icons, so a host
+    does not have to provide an image list. }
   E := THotKeyEdit.Create(nil);
   try
+    AssertNotNull('Default images assigned', E.RightButton.Images);
+    AssertEquals('Two default images', 2, E.RightButton.Images.Count);
+    AssertEquals('Choose default index', HOTKEYEDIT_CHOOSE_INDEX, E.RightButton.ImageIndex);
+
+    E.Hotkey := ShortCut(VK_F5, [ssCtrl]);
+    AssertEquals('Clear default index', HOTKEYEDIT_CLEAR_INDEX, E.RightButton.ImageIndex);
+  finally
+    E.Free;
+  end;
+end;
+
+procedure TTestHotKeyEdit.TestButtonImageIndex;
+var
+  E: THotKeyEdit;
+  List: TImageList;
+begin
+  E := THotKeyEdit.Create(nil);
+  List := TImageList.Create(nil);
+  try
+    List.Width := 16;
+    List.Height := 16;
+    { A host image list takes precedence over the defaults. }
+    E.RightButton.Images := List;
     E.ClearImageIndex := 3;
     E.ChooseImageIndex := 7;
 
@@ -191,17 +217,23 @@ begin
     AssertEquals('Choose icon again', 7, E.RightButton.ImageIndex);
   finally
     E.Free;
+    List.Free;
   end;
 end;
 
 procedure TTestHotKeyEdit.TestButtonImageIndexReset;
 var
   E: THotKeyEdit;
+  List: TImageList;
 begin
   { Resetting a per-state index to -1 must clear the glyph, not keep the
     previous one. }
   E := THotKeyEdit.Create(nil);
+  List := TImageList.Create(nil);
   try
+    List.Width := 16;
+    List.Height := 16;
+    E.RightButton.Images := List;
     E.ClearImageIndex := 3;
     E.ChooseImageIndex := 7;
 
@@ -218,6 +250,7 @@ begin
     AssertEquals('Choose reset to none', -1, E.RightButton.ImageIndex);
   finally
     E.Free;
+    List.Free;
   end;
 end;
 

@@ -27,13 +27,25 @@ uses
   Classes, SysUtils, Controls, Graphics, ImgList, Menus, StdCtrls, LCLType,
   LCLProc, ButtonedEdit, ShortcutGrabber;
 
+const
+  { Embedded default button images (see ShortcutGrabber.lrs), used when the
+    host does not provide its own RightButton.Images. }
+  HOTKEYEDIT_CHOOSE_RES   = 'asuite_hotkey_add';
+  HOTKEYEDIT_CLEAR_RES    = 'asuite_hotkey_delete';
+  HOTKEYEDIT_CHOOSE_INDEX = 0;
+  HOTKEYEDIT_CLEAR_INDEX  = 1;
+
 type
   { THotKeyEdit }
 
   { Read-only "buttoned edit" showing a shortcut. Clicking the edit (or the
     right button, when no shortcut is set) opens TfrmShortcutGrabber; the right
     button clears the current shortcut. It reuses the grabber and THotKey, so
-    an application does not need to wire the dialog by hand. }
+    an application does not need to wire the dialog by hand.
+
+    The right button has default icons (the same ones shipped by ASuite). A
+    host that wants different icons assigns RightButton.Images plus
+    ClearImageIndex/ChooseImageIndex, which then take precedence. }
   THotKeyEdit = class(TCustomButtonedEdit)
   private
     FHotkey: TShortCut;
@@ -62,10 +74,10 @@ type
     procedure OpenGrabber;
     { Clears the shortcut (Hotkey := 0). }
     procedure ClearHotkey;
-
+  published
     { Shortcut value; 0 means "none". Text is kept in sync. }
     property Hotkey: TShortCut read GetHotkey write SetHotkey;
-  published
+
     property Align;
     property Anchors;
     property BiDiMode;
@@ -106,6 +118,24 @@ type
 procedure Register;
 
 implementation
+
+var
+  { Shared image list with the default choose/clear icons. Created lazily and
+    referenced (not owned) by every THotKeyEdit, so it is freed once. }
+  DefaultHotKeyEditImages: TImageList = nil;
+
+function GetDefaultHotKeyEditImages: TImageList;
+begin
+  if DefaultHotKeyEditImages = nil then
+  begin
+    DefaultHotKeyEditImages := TImageList.Create(nil);
+    DefaultHotKeyEditImages.Width := 16;
+    DefaultHotKeyEditImages.Height := 16;
+    DefaultHotKeyEditImages.AddLazarusResource(HOTKEYEDIT_CHOOSE_RES);
+    DefaultHotKeyEditImages.AddLazarusResource(HOTKEYEDIT_CLEAR_RES);
+  end;
+  Result := DefaultHotKeyEditImages;
+end;
 
 procedure Register;
 begin
@@ -190,16 +220,33 @@ begin
 end;
 
 procedure THotKeyEdit.UpdateButton;
+var
+  ClearIdx, ChooseIdx: TImageIndex;
 begin
+  if (RightButton.Images <> nil) and (RightButton.Images <> DefaultHotKeyEditImages) then
+  begin
+    // Host-provided icons take precedence (ASuite sets them from its theme).
+    ClearIdx := FClearImageIndex;
+    ChooseIdx := FChooseImageIndex;
+  end
+  else
+  begin
+    // No host icons: fall back to the embedded defaults.
+    RightButton.Images := GetDefaultHotKeyEditImages;
+    RightButton.ImagesWidth := GetDefaultHotKeyEditImages.Width;
+    ClearIdx := HOTKEYEDIT_CLEAR_INDEX;
+    ChooseIdx := HOTKEYEDIT_CHOOSE_INDEX;
+  end;
+
   if FHotkey <> 0 then
   begin
     RightButton.Visible := True;
-    RightButton.ImageIndex := FClearImageIndex;
+    RightButton.ImageIndex := ClearIdx;
   end
   else
   begin
     RightButton.Visible := not FButtonVisibleOnlyWithHotkey;
-    RightButton.ImageIndex := FChooseImageIndex;
+    RightButton.ImageIndex := ChooseIdx;
   end;
 
   RightButton.UpdateSize;
@@ -235,5 +282,8 @@ procedure THotKeyEdit.ClearHotkey;
 begin
   SetHotkey(0);
 end;
+
+finalization
+  FreeAndNil(DefaultHotKeyEditImages);
 
 end.
