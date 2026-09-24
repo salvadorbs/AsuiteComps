@@ -29,19 +29,54 @@ unit Hotkeys.Manager;
 interface
 
 uses
-  SysUtils, Classes, LCLType, Menus, Hotkeys.ShortcutEx, Generics.Collections,
-  Generics.Defaults;
+  SysUtils, Classes, LCLType, LCLProc, Menus, Hotkeys.ShortcutEx,
+  Generics.Collections, Generics.Defaults;
 
 type
-  { How the Wayland portal backend applies a change of the shortcut set.
+  { Fired when the backend learns which trigger a shortcut actually has.
+    On the portal this may differ from the requested one because the user
+    changed it in the desktop settings; Tag identifies the action.
+    The trigger is a TShortCut (0 when it cannot be represented) so the event
+    crosses the AnsiString/UnicodeString boundary between the package and the
+    application without type clashes. }
+  TTriggerChangedEvent = procedure(Sender: TObject; Tag: Integer;
+    Trigger: TShortCut) of object;
 
-    pbsSpecCompliant - a fresh session for every change, honouring the
-      portal rule that BindShortcuts is called once per session;
-    pbsIncremental   - one long-lived session, re-bound on every change;
-    pbsAuto          - pbsIncremental on KDE (where a shortcut can only be
-      removed while it is registered in the current session), pbsSpecCompliant
-      elsewhere. See Hotkeys.Manager.Portal for the details. }
-  TPortalBindStrategy = (pbsAuto, pbsSpecCompliant, pbsIncremental);
+  { Same as TTriggerChangedEvent but carries the stable host-level ActionId
+    ('' when the caller did not provide one). Prefer this event when several
+    actions may share the same Tag or use Tag = -1. }
+  TTriggerChangedExEvent = procedure(Sender: TObject; const ActionId: String;
+    Tag: Integer; Trigger: TShortCut) of object;
+
+  { Result of asking a backend whether an action or a key combination is
+    currently known to its *persistent* store (e.g. the Wayland
+    GlobalShortcuts portal, where bindings survive the application exit).
+
+    The tri-state matters: a plain Boolean cannot tell "not registered" apart
+    from "cannot be checked", and a backend without a queryable store must not
+    pretend to know.
+
+      hqsUnknown - the backend cannot answer (unsupported, no service, error,
+                   malformed reply or timeout);
+      hqsAbsent  - the backend answered and the action/combination is not
+                   registered there;
+      hqsPresent - the backend answered and the action/combination is
+                   registered there.
+
+    Querying is a read-only operation and must never create or remove a
+    binding. The portal answers about the shortcuts it exposes to this
+    application/session, not about every global shortcut of the desktop. }
+  THotkeyQueryStatus = (hqsUnknown, hqsAbsent, hqsPresent);
+
+  { Outcome of comparing a requested key combination with the one a backend
+    reports. A backend may expose a human-readable trigger that cannot be
+    interpreted (e.g. a localised description), so "different" and "not
+    comparable" must stay distinct.
+
+      ptmUnknown - at least one side is not a comparable accelerator;
+      ptmNo      - both are comparable and differ;
+      ptmYes     - both are comparable and equal. }
+  THotkeyTriggerMatch = (ptmUnknown, ptmNo, ptmYes);
 
   THotkeyList = TObjectList<TShortcutEx>;
 
@@ -53,12 +88,34 @@ type
   private
     FList: THotkeyList;
     FAppToken: String;
-    FPortalBindStrategy: TPortalBindStrategy;
+    FUpdateLevel: Integer;
+    FUpdateAdded: THotkeyList;   // added during the current batch (not owned)
+    FUpdateRemoved: THotkeyList; // removed during the current batch (owned)
+    FOnTriggerChanged: TTriggerChangedEvent;
+    FOnTriggerChangedEx: TTriggerChangedExEvent;
+    FAssignedTriggers: TStringList; // Tag -> trigger assigned by the backend
+    FAssignedByAction: TStringList; // ActionId -> trigger assigned
     function GetHotkey(Index: Integer): TShortcutEx;
     function GetCount: Integer;
+    procedure RollbackUpdate;
   protected
     function DoRegister(Shortcut: TShortCutEx): Boolean; virtual; abstract;
     function DoUnregister(Shortcut: TShortCutEx): Boolean; virtual; abstract;
+
+    { Bulk-update hooks: called once when the outermost BeginHotkeyUpdate /
+      EndHotkeyUpdate pair opens/closes. The default implementation does
+      nothing (backends that apply every change immediately need no batching);
+      the portal uses them to bind the whole set only once. }
+    procedure DoBeginUpdate; virtual;
+    function DoEndUpdate: Boolean; virtual;
+
+    { Teardown hook called from the destructor. The default releases every
+      binding like ClearAllHotkeys; the portal overrides it to keep the
+      desktop preferences intact (a Wayland binding survives the app exit).
+      Use ForgetAllHotkeys to drop the local tracking without touching the
+      backend. }
+    procedure DoShutdown; virtual;
+    procedure ForgetAllHotkeys;
 
     property Hotkeys[Index: Integer]: TShortcutEx read GetHotkey; default;
     property Count: Integer read GetCount;
@@ -67,6 +124,12 @@ type
     destructor Destroy; override;
 
     function RegisterNotify(Shortcut: TShortCut; Notify: TKeyNotifyEvent; Tag: Integer = -1): Boolean;
+    { Same as RegisterNotify but also sets the stable ActionId the host uses to
+      identify the action. On backends with a persistent store the ActionId
+      keeps the binding across shortcut changes and restarts; Tag remains a
+      runtime callback value. }
+    function RegisterNotifyEx(Shortcut: TShortCut; Notify: TKeyNotifyEvent;
+      Tag: Integer; const ActionId: String): Boolean;
     function UnregisterNotify(Shortcut: TShortCut): Boolean;
     { Re-applies the platform registration of an already known shortcut.
       Only the callback/tag can change, so backends whose bindings are looked
@@ -78,7 +141,44 @@ type
     function FindHotkeyByIndex(Index: Integer): Integer;
     procedure ClearAllHotkeys;
 
+    { Groups many registrations/removals into a single backend update. The
+      portal binds the resulting set only once, when the outermost update
+      closes; other backends keep applying each change immediately. Nested
+      calls are allowed. }
+    procedure BeginHotkeyUpdate;
+    function EndHotkeyUpdate: Boolean;
+
+    { Called by a backend when it learns the trigger actually assigned to a
+      shortcut (e.g. the portal reported it). ActionId is the host-level
+      identity ('' when unknown). }
+    procedure NotifyTriggerAssigned(const ActionId: String; Tag: Integer;
+      const Trigger: String); overload;
+    procedure NotifyTriggerAssigned(Tag: Integer;
+      const Trigger: String); overload;
+    { The trigger the backend last reported for Tag, or '' if unknown. On the
+      portal this can differ from the requested one when the user changed it
+      in the desktop settings. }
+    function TriggerOf(Tag: Integer): String;
+    { The trigger the backend last reported for a host-level ActionId. }
+    function TriggerOfAction(const ActionId: String): String;
+
     function IsHotkeyAvailable(Shortcut: TShortCut): Boolean; virtual; abstract;
+
+    { Asks the backend whether the action identified by ActionId is currently
+      registered in its persistent store, and which trigger it reports.
+      ActionId is the host-level identity (the same string passed to
+      RegisterNotifyEx, or IntToStr(Tag)); the backend maps it to its own id.
+      Backends without a queryable store return hqsUnknown and set
+      AssignedTrigger to ''. }
+    function QueryRegisteredById(const ActionId: String;
+      out AssignedTrigger: String): THotkeyQueryStatus; virtual;
+    { Asks the backend which actions currently use the given key combination.
+      ActionIds is cleared first and then filled with the host-level action
+      keys (the same strings accepted by QueryRegisteredById; possibly more
+      than one, or none). Passing nil is allowed and treated as hqsUnknown.
+      Backends without a queryable store return hqsUnknown. }
+    function QueryRegisteredByShortcut(Shortcut: TShortCut;
+      var ActionIds: TStringList): THotkeyQueryStatus; virtual;
 
     { Keyword used by backends that must namespace themselves (the Wayland
       portal uses it for the session handle, the request handle and the
@@ -93,10 +193,13 @@ type
       desktop environment. }
     property AppToken: String read FAppToken write FAppToken;
 
-    { Binding strategy used by the Wayland portal backend. Set it before the
-      first registration; pbsAuto is the recommended default. }
-    property PortalBindStrategy: TPortalBindStrategy
-      read FPortalBindStrategy write FPortalBindStrategy;
+    { The trigger actually assigned by the backend (see TTriggerChangedEvent). }
+    property OnTriggerChanged: TTriggerChangedEvent
+      read FOnTriggerChanged write FOnTriggerChanged;
+
+    { Like OnTriggerChanged but also reports the stable host-level ActionId. }
+    property OnTriggerChangedEx: TTriggerChangedExEvent
+      read FOnTriggerChangedEx write FOnTriggerChangedEx;
   end;
 
 { Used by THotkeyList }
@@ -135,13 +238,20 @@ begin
   inherited Create;
 
   FAppToken := DefaultHotkeyToken;
-  FPortalBindStrategy := pbsAuto;
+  FAssignedTriggers := TStringList.Create;
+  FAssignedByAction := TStringList.Create;
   FList := THotkeyList.Create(THotkeysComparer.Construct(HotkeyCompare), True);
+  FUpdateAdded := THotkeyList.Create(False);
+  FUpdateRemoved := THotkeyList.Create(True);
 end;
 
 destructor TBaseHotkeyManager.Destroy;
 begin
-  ClearAllHotkeys;
+  DoShutdown;
+  FAssignedByAction.Free;
+  FAssignedTriggers.Free;
+  FUpdateRemoved.Free;
+  FUpdateAdded.Free;
   FList.Free;
 
   inherited Destroy;
@@ -189,6 +299,12 @@ begin
 end;
 
 function TBaseHotkeyManager.RegisterNotify(Shortcut: TShortCut; Notify: TKeyNotifyEvent; Tag: Integer = -1): Boolean;
+begin
+  Result := RegisterNotifyEx(Shortcut, Notify, Tag, '');
+end;
+
+function TBaseHotkeyManager.RegisterNotifyEx(Shortcut: TShortCut;
+  Notify: TKeyNotifyEvent; Tag: Integer; const ActionId: String): Boolean;
 var
   H: TShortcutEx;
   I: Integer;
@@ -208,10 +324,13 @@ begin
   H := TShortcutEx.Create(Shortcut);
   H.Notify := Notify;
   H.Tag := Tag;
+  H.ActionId := ActionId;
 
   if DoRegister(H) then
   begin
     FList.Add(H);
+    if FUpdateLevel > 0 then
+      FUpdateAdded.Add(H); // tracked so a failed batch can roll it back
     Result := True;
   end
   else
@@ -221,6 +340,7 @@ end;
 function TBaseHotkeyManager.UnregisterNotify(Shortcut: TShortCut): Boolean;
 var
   I: Integer;
+  H: TShortcutEx;
 begin
   Result := False;
 
@@ -232,9 +352,23 @@ begin
   begin
     // Only drop the item when the platform released it, so a failure keeps
     // the state consistent and can be retried.
-    if DoUnregister(FList[I]) then
+    H := FList[I];
+    if DoUnregister(H) then
     begin
-      FList.Delete(I);
+      if FUpdateLevel > 0 then
+      begin
+        // Keep the object alive until the batch outcome is known, so a failed
+        // batch can restore it.
+        FList.OwnsObjects := False;
+        try
+          FList.Delete(I);
+        finally
+          FList.OwnsObjects := True;
+        end;
+        FUpdateRemoved.Add(H);
+      end
+      else
+        FList.Delete(I);
       Result := True;
     end;
   end;
@@ -294,6 +428,136 @@ begin
     DoUnregister(H);
     FList.Delete(Count - 1);
   end;
+end;
+
+procedure TBaseHotkeyManager.DoBeginUpdate;
+begin
+  // Immediate backends need no batching.
+end;
+
+function TBaseHotkeyManager.DoEndUpdate: Boolean;
+begin
+  Result := True;
+end;
+
+procedure TBaseHotkeyManager.DoShutdown;
+begin
+  ClearAllHotkeys;
+end;
+
+procedure TBaseHotkeyManager.ForgetAllHotkeys;
+begin
+  // Drop the local tracking without touching the backend: used on teardown by
+  // backends whose bindings are persistent (the Wayland portal).
+  FList.Clear;
+end;
+
+procedure TBaseHotkeyManager.RollbackUpdate;
+var
+  I, J: Integer;
+  H: TShortcutEx;
+begin
+  // The backend did not confirm the batch: drop the additions and restore the
+  // removals so the manager matches what is actually registered.
+  for I := 0 to FUpdateAdded.Count - 1 do
+  begin
+    H := FUpdateAdded[I];
+    J := FList.IndexOf(H);
+    if J >= 0 then
+    begin
+      FList.OwnsObjects := False;
+      try
+        FList.Delete(J);
+      finally
+        FList.OwnsObjects := True;
+      end;
+      H.Free;
+    end;
+  end;
+  FUpdateAdded.Clear;
+
+  for I := 0 to FUpdateRemoved.Count - 1 do
+    FList.Add(FUpdateRemoved[I]); // ownership moves back to FList
+  FUpdateRemoved.OwnsObjects := False;
+  FUpdateRemoved.Clear;
+  FUpdateRemoved.OwnsObjects := True;
+end;
+
+function TBaseHotkeyManager.QueryRegisteredById(const ActionId: String;
+  out AssignedTrigger: String): THotkeyQueryStatus;
+begin
+  // Backends without a persistent, queryable store cannot answer. Reporting
+  // hqsUnknown (instead of a misleading hqsAbsent) lets the caller tell
+  // "not registered" apart from "cannot be checked".
+  AssignedTrigger := '';
+  Result := hqsUnknown;
+end;
+
+function TBaseHotkeyManager.QueryRegisteredByShortcut(Shortcut: TShortCut;
+  var ActionIds: TStringList): THotkeyQueryStatus;
+begin
+  if ActionIds <> nil then
+    ActionIds.Clear;
+  Result := hqsUnknown;
+end;
+
+procedure TBaseHotkeyManager.BeginHotkeyUpdate;
+begin
+  Inc(FUpdateLevel);
+  if FUpdateLevel = 1 then
+  begin
+    FUpdateAdded.Clear;
+    FUpdateRemoved.Clear;
+    DoBeginUpdate;
+  end;
+end;
+
+function TBaseHotkeyManager.EndHotkeyUpdate: Boolean;
+begin
+  Result := True;
+  if FUpdateLevel > 0 then
+  begin
+    Dec(FUpdateLevel);
+    if FUpdateLevel = 0 then
+    begin
+      Result := DoEndUpdate;
+      if Result then
+      begin
+        FUpdateAdded.Clear;
+        FUpdateRemoved.Clear; // frees the confirmed removals
+      end
+      else
+        RollbackUpdate;
+    end;
+  end;
+end;
+
+procedure TBaseHotkeyManager.NotifyTriggerAssigned(const ActionId: String;
+  Tag: Integer; const Trigger: String);
+begin
+  FAssignedTriggers.Values[IntToStr(Tag)] := Trigger;
+  if ActionId <> '' then
+    FAssignedByAction.Values[ActionId] := Trigger;
+  if Assigned(FOnTriggerChanged) then
+    FOnTriggerChanged(Self, Tag, TextToShortCut(Trigger));
+  if Assigned(FOnTriggerChangedEx) then
+    FOnTriggerChangedEx(Self, ActionId, Tag, TextToShortCut(Trigger));
+end;
+
+procedure TBaseHotkeyManager.NotifyTriggerAssigned(Tag: Integer;
+  const Trigger: String);
+begin
+  NotifyTriggerAssigned('', Tag, Trigger);
+end;
+
+function TBaseHotkeyManager.TriggerOf(Tag: Integer): String;
+begin
+  Result := FAssignedTriggers.Values[IntToStr(Tag)];
+end;
+
+function TBaseHotkeyManager.TriggerOfAction(const ActionId: String): String;
+begin
+  Result := FAssignedByAction.Values[ActionId];
 end;
 
 initialization

@@ -20,20 +20,37 @@ type
     FRegisterResult: Boolean;
     FUnregisterResult: Boolean;
     FAvailable: Boolean;
+    FBeginCalls: Integer;
+    FEndCalls: Integer;
+    FEndResult: Boolean;
   protected
     function DoRegister(Shortcut: TShortcutEx): Boolean; override;
     function DoUnregister(Shortcut: TShortcutEx): Boolean; override;
+    procedure DoBeginUpdate; override;
+    function DoEndUpdate: Boolean; override;
   public
     constructor Create; override;
     function IsHotkeyAvailable(Shortcut: TShortCut): Boolean; override;
 
     function PubCount: Integer;
     function PubHotkey(Index: Integer): TShortcutEx;
+    procedure PubShutdown;
+    procedure PubForget;
 
     property RegisterCalls: Integer read FRegisterCalls;
     property UnregisterCalls: Integer read FUnregisterCalls;
     property RegisterResult: Boolean read FRegisterResult write FRegisterResult;
     property UnregisterResult: Boolean read FUnregisterResult write FUnregisterResult;
+    property BeginCalls: Integer read FBeginCalls;
+    property EndCalls: Integer read FEndCalls;
+    property EndResult: Boolean read FEndResult write FEndResult;
+  end;
+
+  { A backend whose bindings are persistent (like the Wayland portal): its
+    teardown must not unbind. }
+  TTestPortalLikeManager = class(TTestHotkeyManager)
+  protected
+    procedure DoShutdown; override;
   end;
 
   { TTestHotkeysManager }
@@ -43,7 +60,15 @@ type
     FMgr: TTestHotkeyManager;
     FNotifyCount: Integer;
     FNotifyTag: Integer;
+    FTriggerTag: Integer;
+    FTriggerShortcut: TShortCut;
+    FTriggerAction: String;
+    FTriggerExTag: Integer;
+    FTriggerExShortcut: TShortCut;
     procedure OnTestNotify(Sender: TObject; ShortcutEx: TShortcutEx);
+    procedure OnTestTrigger(Sender: TObject; Tag: Integer; Trigger: TShortCut);
+    procedure OnTestTriggerEx(Sender: TObject; const ActionId: String;
+      Tag: Integer; Trigger: TShortCut);
   protected
     procedure SetUp; override;
     procedure TearDown; override;
@@ -73,7 +98,19 @@ type
     procedure TestDestructorWithItems;
     procedure TestDefaultHotkeyToken;
     procedure TestAppTokenProperty;
-    procedure TestPortalBindStrategyProperty;
+    procedure TestBeginEndHotkeyUpdate;
+    procedure TestEndHotkeyUpdateWithoutBegin;
+    procedure TestAssignedTrigger;
+    procedure TestBaseQueryUnknown;
+    procedure TestRegisterNotifyExActionId;
+    procedure TestShutdownDefaultUnregisters;
+    procedure TestShutdownPortalLikeKeepsBackend;
+    procedure TestForgetAllHotkeys;
+    procedure TestBatchRollbackOnFailure;
+    procedure TestBatchSuccessKeepsChanges;
+    procedure TestBatchRollbackAllowsRetry;
+    procedure TestNilActionIds;
+    procedure TestTriggerChangedEx;
   end;
 
 implementation
@@ -86,6 +123,7 @@ begin
   FRegisterResult := True;
   FUnregisterResult := True;
   FAvailable := True;
+  FEndResult := True;
 end;
 
 function TTestHotkeyManager.DoRegister(Shortcut: TShortcutEx): Boolean;
@@ -103,6 +141,33 @@ function TTestHotkeyManager.DoUnregister(Shortcut: TShortcutEx): Boolean;
 begin
   Inc(FUnregisterCalls);
   Result := FUnregisterResult;
+end;
+
+procedure TTestHotkeyManager.DoBeginUpdate;
+begin
+  Inc(FBeginCalls);
+end;
+
+function TTestHotkeyManager.DoEndUpdate: Boolean;
+begin
+  Inc(FEndCalls);
+  Result := FEndResult;
+end;
+
+procedure TTestHotkeyManager.PubShutdown;
+begin
+  DoShutdown;
+end;
+
+procedure TTestHotkeyManager.PubForget;
+begin
+  ForgetAllHotkeys;
+end;
+
+procedure TTestPortalLikeManager.DoShutdown;
+begin
+  // Persistent backend: keep the preferences, only drop the local tracking.
+  ForgetAllHotkeys;
 end;
 
 function TTestHotkeyManager.IsHotkeyAvailable(Shortcut: TShortCut): Boolean;
@@ -128,12 +193,33 @@ begin
   FNotifyTag := ShortcutEx.Tag;
 end;
 
+procedure TTestHotkeysManager.OnTestTrigger(Sender: TObject; Tag: Integer;
+  Trigger: TShortCut);
+begin
+  FTriggerTag := Tag;
+  FTriggerShortcut := Trigger;
+end;
+
+procedure TTestHotkeysManager.OnTestTriggerEx(Sender: TObject;
+  const ActionId: String; Tag: Integer; Trigger: TShortCut);
+begin
+  FTriggerAction := ActionId;
+  FTriggerExTag := Tag;
+  FTriggerExShortcut := Trigger;
+end;
+
 procedure TTestHotkeysManager.SetUp;
 begin
   inherited SetUp;
   FMgr := TTestHotkeyManager.Create;
+  FMgr.OnTriggerChanged := @OnTestTrigger;
   FNotifyCount := 0;
   FNotifyTag := -1;
+  FTriggerTag := -1;
+  FTriggerShortcut := 0;
+  FTriggerAction := '';
+  FTriggerExTag := -1;
+  FTriggerExShortcut := 0;
 end;
 
 procedure TTestHotkeysManager.TearDown;
@@ -386,13 +472,178 @@ begin
   end;
 end;
 
-procedure TTestHotkeysManager.TestPortalBindStrategyProperty;
+procedure TTestHotkeysManager.TestBeginEndHotkeyUpdate;
 begin
-  AssertTrue('Default is pbsAuto', FMgr.PortalBindStrategy = pbsAuto);
-  FMgr.PortalBindStrategy := pbsIncremental;
-  AssertTrue('Stored incremental', FMgr.PortalBindStrategy = pbsIncremental);
-  FMgr.PortalBindStrategy := pbsSpecCompliant;
-  AssertTrue('Stored spec-compliant', FMgr.PortalBindStrategy = pbsSpecCompliant);
+  { The update hooks fire once for the outermost pair, and registrations made
+    inside the scope still reach the backend. }
+  FMgr.BeginHotkeyUpdate;
+  FMgr.BeginHotkeyUpdate; // nested
+  AssertEquals('DoBeginUpdate once', 1, FMgr.BeginCalls);
+  AssertTrue('Register inside update', FMgr.RegisterNotify(ShortCut(VK_A, [ssCtrl]), nil));
+  AssertEquals('Registered immediately on this backend', 1, FMgr.PubCount);
+
+  AssertTrue('End nested', FMgr.EndHotkeyUpdate);
+  AssertEquals('DoEndUpdate not called yet', 0, FMgr.EndCalls);
+  AssertTrue('End outer', FMgr.EndHotkeyUpdate);
+  AssertEquals('DoEndUpdate once', 1, FMgr.EndCalls);
+end;
+
+procedure TTestHotkeysManager.TestEndHotkeyUpdateWithoutBegin;
+begin
+  { Unbalanced End must be harmless and must not call the hook. }
+  AssertTrue('No pending update', FMgr.EndHotkeyUpdate);
+  AssertEquals('DoEndUpdate not called', 0, FMgr.EndCalls);
+end;
+
+procedure TTestHotkeysManager.TestAssignedTrigger;
+begin
+  AssertEquals('Unknown trigger', '', FMgr.TriggerOf(7));
+
+  FMgr.NotifyTriggerAssigned(7, 'Ctrl+Alt+L');
+  AssertEquals('Stored', 'Ctrl+Alt+L', FMgr.TriggerOf(7));
+  AssertEquals('Callback tag', 7, FTriggerTag);
+  AssertEquals('Callback trigger', Integer(ShortCut(VK_L, [ssCtrl, ssAlt])),
+    Integer(FTriggerShortcut));
+
+  FMgr.NotifyTriggerAssigned(7, 'Ctrl+Alt+K');
+  AssertEquals('Updated', 'Ctrl+Alt+K', FMgr.TriggerOf(7));
+  AssertEquals('Other tag untouched', '', FMgr.TriggerOf(8));
+end;
+
+procedure TTestHotkeysManager.TestBaseQueryUnknown;
+var
+  Trigger: String;
+  Ids: TStringList;
+begin
+  { A backend without a queryable persistent store must answer hqsUnknown
+    instead of a misleading absent/present, and must clear its outputs. }
+  Trigger := 'sentinel';
+  AssertTrue('ById unknown',
+    FMgr.QueryRegisteredById('whatever', Trigger) = hqsUnknown);
+  AssertEquals('Trigger cleared', '', Trigger);
+
+  Ids := TStringList.Create;
+  try
+    Ids.Add('leftover');
+    AssertTrue('ByShortcut unknown',
+      FMgr.QueryRegisteredByShortcut(ShortCut(VK_A, [ssCtrl]), Ids) = hqsUnknown);
+    AssertEquals('Ids cleared', 0, Ids.Count);
+  finally
+    Ids.Free;
+  end;
+end;
+
+procedure TTestHotkeysManager.TestNilActionIds;
+var
+  NilIds: TStringList;
+begin
+  { Passing nil must be harmless and reported as unknown, not crash. }
+  NilIds := nil;
+  AssertTrue('Nil output is unknown',
+    FMgr.QueryRegisteredByShortcut(ShortCut(VK_A, [ssCtrl]), NilIds) = hqsUnknown);
+end;
+
+procedure TTestHotkeysManager.TestTriggerChangedEx;
+var
+  Action: String;
+  Tag: Integer;
+  Trigger: TShortCut;
+begin
+  FMgr.OnTriggerChangedEx := @OnTestTriggerEx;
+  FMgr.NotifyTriggerAssigned('open-home', 5, 'Ctrl+Alt+L');
+  AssertEquals('ActionId delivered', 'open-home', FTriggerAction);
+  AssertEquals('Tag delivered', 5, FTriggerExTag);
+  AssertEquals('Trigger delivered', Integer(ShortCut(VK_L, [ssCtrl, ssAlt])),
+    Integer(FTriggerExShortcut));
+  AssertEquals('Stored by action', 'Ctrl+Alt+L', FMgr.TriggerOfAction('open-home'));
+  AssertEquals('Stored by tag', 'Ctrl+Alt+L', FMgr.TriggerOf(5));
+end;
+
+procedure TTestHotkeysManager.TestShutdownDefaultUnregisters;
+begin
+  { The default teardown releases every binding. }
+  FMgr.RegisterNotify(ShortCut(VK_A, [ssCtrl]), nil);
+  FMgr.RegisterNotify(ShortCut(VK_B, [ssCtrl]), nil);
+  FMgr.PubShutdown;
+  AssertEquals('Count', 0, FMgr.PubCount);
+  AssertEquals('Both unregistered', 2, FMgr.UnregisterCalls);
+end;
+
+procedure TTestHotkeysManager.TestShutdownPortalLikeKeepsBackend;
+var
+  Local: TTestPortalLikeManager;
+begin
+  { A persistent backend must not unbind on teardown. }
+  Local := TTestPortalLikeManager.Create;
+  try
+    Local.RegisterNotify(ShortCut(VK_A, [ssCtrl]), nil);
+    Local.RegisterNotify(ShortCut(VK_B, [ssCtrl]), nil);
+    Local.PubShutdown;
+    AssertEquals('Local tracking dropped', 0, Local.PubCount);
+    AssertEquals('Backend untouched', 0, Local.UnregisterCalls);
+  finally
+    Local.Free;
+  end;
+end;
+
+procedure TTestHotkeysManager.TestForgetAllHotkeys;
+begin
+  FMgr.RegisterNotify(ShortCut(VK_A, [ssCtrl]), nil);
+  FMgr.PubForget;
+  AssertEquals('Count', 0, FMgr.PubCount);
+  AssertEquals('No unregister', 0, FMgr.UnregisterCalls);
+end;
+
+procedure TTestHotkeysManager.TestBatchSuccessKeepsChanges;
+begin
+  FMgr.RegisterNotify(ShortCut(VK_A, [ssCtrl]), nil);
+  FMgr.BeginHotkeyUpdate;
+  FMgr.RegisterNotify(ShortCut(VK_B, [ssCtrl]), nil);
+  FMgr.UnregisterNotify(ShortCut(VK_A, [ssCtrl]));
+  AssertTrue('Batch succeeds', FMgr.EndHotkeyUpdate);
+  AssertEquals('Count', 1, FMgr.PubCount);
+  AssertTrue('B present', FMgr.FindHotkey(ShortCut(VK_B, [ssCtrl])) >= 0);
+  AssertEquals('A gone', -1, FMgr.FindHotkey(ShortCut(VK_A, [ssCtrl])));
+end;
+
+procedure TTestHotkeysManager.TestBatchRollbackOnFailure;
+begin
+  { A failed batch must leave the manager exactly as it was before it opened. }
+  FMgr.RegisterNotify(ShortCut(VK_A, [ssCtrl]), nil);
+  FMgr.EndResult := False;
+  FMgr.BeginHotkeyUpdate;
+  FMgr.RegisterNotify(ShortCut(VK_B, [ssCtrl]), nil);
+  FMgr.UnregisterNotify(ShortCut(VK_A, [ssCtrl]));
+  AssertFalse('Batch fails', FMgr.EndHotkeyUpdate);
+  AssertEquals('Count restored', 1, FMgr.PubCount);
+  AssertTrue('A restored', FMgr.FindHotkey(ShortCut(VK_A, [ssCtrl])) >= 0);
+  AssertEquals('B dropped', -1, FMgr.FindHotkey(ShortCut(VK_B, [ssCtrl])));
+end;
+
+procedure TTestHotkeysManager.TestBatchRollbackAllowsRetry;
+begin
+  FMgr.EndResult := False;
+  FMgr.BeginHotkeyUpdate;
+  FMgr.RegisterNotify(ShortCut(VK_A, [ssCtrl]), nil);
+  AssertFalse('Batch fails', FMgr.EndHotkeyUpdate);
+  { The rolled-back addition must be retryable, not a stale duplicate. }
+  FMgr.EndResult := True;
+  AssertTrue('Retry after rollback', FMgr.RegisterNotify(ShortCut(VK_A, [ssCtrl]), nil));
+  AssertEquals('Count', 1, FMgr.PubCount);
+end;
+
+procedure TTestHotkeysManager.TestRegisterNotifyExActionId;
+begin
+  AssertTrue('RegisterEx',
+    FMgr.RegisterNotifyEx(ShortCut(VK_A, [ssCtrl]), nil, 5, 'open-home'));
+  AssertEquals('Count', 1, FMgr.PubCount);
+  AssertEquals('Tag stored', 5, FMgr.PubHotkey(0).Tag);
+  AssertEquals('ActionId stored', 'open-home', FMgr.PubHotkey(0).ActionId);
+
+  { RegisterNotify keeps an empty ActionId. }
+  AssertTrue('Register plain',
+    FMgr.RegisterNotify(ShortCut(VK_B, [ssCtrl]), nil, 6));
+  AssertEquals('Empty ActionId', '', FMgr.PubHotkey(1).ActionId);
 end;
 
 procedure TTestHotkeysManager.TestDestructorWithItems;

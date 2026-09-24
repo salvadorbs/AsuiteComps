@@ -34,7 +34,7 @@ interface
 
 uses
   X, XLib, KeySym, ctypes, Hotkeys.Manager, Hotkeys.ShortcutEx, Hotkeys.Manager.Portal,
-  LCLType, Menus, LCLProc, Classes, sysutils, ExtCtrls
+  Hotkeys.Manager.X11, LCLType, Menus, LCLProc, Classes, sysutils, ExtCtrls
 
   {$IFDEF LCLGTK2}
   , Gdk2, Gdk2x, Gtk2Proc
@@ -68,6 +68,7 @@ type
   TUnixHotkeyManager = class(TBaseHotkeyManager)
   private
     FDisplay: PDisplay;
+    FX11: TX11KeyGrabber;
     FPortal: TPortalHotkeyEngine;
     FPortalTimer: TTimer;
     FBackend: TUnixHotkeyBackend;
@@ -83,23 +84,24 @@ type
     function FilterKeys(handle: QNativeEventFilter_hookH; eventType: QByteArrayH; message: long): boolean; cdecl;
     {$ENDIF}
 
-    function ShiftToMod(ShiftState: TShiftState): Integer;
-    function KeyToSym(Key: Word): TKeySym;
-    function SymToKey(Sym: TKeySym): Word;
-    function ModToShift(Modifiers: Integer): TShiftState;
-    procedure CaptureKey(Display: PDisplay; KeyCode: LongWord; Modifier: LongWord; Window: TWindow);
-    procedure ReleaseKey(Display: PDisplay; KeyCode: LongWord; Modifier: LongWord; Window: TWindow);
     procedure AddEventFilter;
     procedure RemoveEventFilter;
     function InternalRegisterShortcut(AShortcut: TShortCutEx; ARegister: Boolean): Boolean;
+    function X11Window: TWindow;
     function IsWaylandSession: Boolean;
     function SelectBackend: TUnixHotkeyBackend;
+    function EnsurePortal: TPortalHotkeyEngine;
     function PortalRegister(AShortcut: TShortCutEx): Boolean;
     function PortalUnregister(AShortcut: TShortCutEx): Boolean;
     procedure PortalTimerTick(Sender: TObject);
   protected
     function DoRegister(Shortcut: TShortCutEx): Boolean; override;
     function DoUnregister(Shortcut: TShortCutEx): Boolean; override;
+    procedure DoBeginUpdate; override;
+    function DoEndUpdate: Boolean; override;
+    { On the portal, teardown must NOT unbind: the desktop keeps the user's
+      preferences. On X11 the grabs are released. }
+    procedure DoShutdown; override;
   public
     constructor Create; override;
     destructor Destroy; override;
@@ -107,6 +109,14 @@ type
     procedure RefreshNotify(Shortcut: TShortCut); override;
 
     function IsHotkeyAvailable(Shortcut: TShortCut): Boolean; override;
+
+    { Portal-backed read-only queries. On X11 or with no backend they return
+      hqsUnknown: those backends have no persistent, enumerable store, so
+      "not registered" cannot be distinguished from "cannot be checked". }
+    function QueryRegisteredById(const ActionId: String;
+      out AssignedTrigger: String): THotkeyQueryStatus; override;
+    function QueryRegisteredByShortcut(Shortcut: TShortCut;
+      var ActionIds: TStringList): THotkeyQueryStatus; override;
 
     { Backend selected for this session (mostly for tests/diagnostics) }
     property Backend: TUnixHotkeyBackend read FBackend;
@@ -126,28 +136,7 @@ function gdk_x11_display_get_xdisplay(AX11Display: PGdkDisplay): PDisplay; cdecl
 { Returns the global hotkey manager instance }
 function HotkeyManager: TBaseHotkeyManager;
 
-{
-  X Key Modifiers:
-
-  Mask        | Value | Key
-  ------------+-------+------------
-  ShiftMask   |     1 | Shift
-  LockMask    |     2 | Caps Lock
-  ControlMask |     4 | Ctrl
-  Mod1Mask    |     8 | Alt
-  Mod2Mask    |    16 | Num Lock
-  Mod3Mask    |    32 | Scroll Lock
-  Mod4Mask    |    64 | Windows
-}
-
 const
-  AltMask = Mod1Mask;
-  SuperMask = Mod4Mask;
-  ModifiersMask = ShiftMask or AltMask or ControlMask or SuperMask;
-  CapLock = LockMask;
-  NumLock = Mod2Mask;
-  NotLock = Integer(not (CapLock or NumLock));
-
   { Minimal XCB key-press layout, read straight from the native Qt event
     message (xcb_key_press_event_t). Only the fields needed to identify a
     key press are used, so the xcb binding unit is not required. }
@@ -158,16 +147,6 @@ const
 
 implementation
 
-var
-  { Set by HookXErrorHandler while a temporary X11 probe is running. }
-  HookXError: Boolean = False;
-
-function HookXErrorHandler(para1: PDisplay; para2: PXErrorEvent): cint; cdecl;
-begin
-  HookXError := True;
-  Result := 0;
-end;
-
 function InternalFilterKeys(Self: TUnixHotkeyManager; KeyCode: Cardinal; KeyState: Cardinal): Boolean;
 var
   I: Integer;
@@ -175,7 +154,7 @@ var
   Sym: TKeySym;
 begin
   Sym := XKeycodeToKeysym(Self.FDisplay, KeyCode, 0);
-  I := Self.FindHotkey(Self.SymToKey(Sym), Self.ModToShift(KeyState));
+  I := Self.FindHotkey(X11SymToKey(Sym), X11ModToShift(KeyState));
 
   Result := I > -1;
   if Result then
@@ -192,55 +171,6 @@ begin
     InternalManager := TUnixHotkeyManager.Create;
 
   Result := TBaseHotkeyManager(InternalManager);
-end;
-
-function TUnixHotkeyManager.ShiftToMod(ShiftState: TShiftState): Integer;
-begin
-  Result := 0;
-  if ssShift in ShiftState then
-    Result := Result or ShiftMask;
-  if ssAlt in ShiftState then
-    Result := Result or AltMask;
-  if ssCtrl in ShiftState then
-    Result := Result or ControlMask;
-  if (ssSuper in ShiftState) or (ssMeta in ShiftState) then
-    Result := Result or SuperMask;
-end;
-
-function TUnixHotkeyManager.ModToShift(Modifiers: Integer): TShiftState;
-begin
-  Result := [];
-  if ShiftMask and Modifiers > 0 then
-    Include(Result, ssShift);
-  if AltMask and Modifiers > 0 then
-    Include(Result, ssAlt);
-  if ControlMask and Modifiers > 0 then
-    Include(Result, ssCtrl);
-  if (SuperMask and Modifiers > 0) then
-    Include(Result, ssMeta);
-end;
-
-procedure TUnixHotkeyManager.CaptureKey(Display: PDisplay; KeyCode: LongWord;
-  Modifier: LongWord; Window: TWindow);
-begin
-  { Capture keys without cap or num lock }
-  XGrabKey(Display, KeyCode, Modifier and NotLock, Window, 1, GrabModeAsync, GrabModeAsync);
-  { Capture keys with cap lock }
-  XGrabKey(Display, KeyCode, Modifier or CapLock, Window, 1, GrabModeAsync, GrabModeAsync);
-  { Capture keys with num lock }
-  XGrabKey(Display, KeyCode, Modifier or NumLock, Window, 1, GrabModeAsync, GrabModeAsync);
-  { Capture keys with cap or num lock }
-  XGrabKey(Display, KeyCode, Modifier or CapLock or NumLock, Window, 1, GrabModeAsync, GrabModeAsync);
-end;
-
-procedure TUnixHotkeyManager.ReleaseKey(Display: PDisplay; KeyCode: LongWord;
-  Modifier: LongWord; Window: TWindow);
-begin
-  { See comments in CaptureKey }
-  XUngrabKey(Display, KeyCode, Modifier and NotLock, Window);
-  XUngrabKey(Display, KeyCode, Modifier or CapLock, Window);
-  XUngrabKey(Display, KeyCode, Modifier or NumLock, Window);
-  XUngrabKey(Display, KeyCode, Modifier or CapLock or NumLock, Window);
 end;
 
 procedure TUnixHotkeyManager.AddEventFilter;
@@ -271,301 +201,44 @@ begin
   end;
 end;
 
+function TUnixHotkeyManager.X11Window: TWindow;
+begin
+  // Grabs go on the widgetset's root window so the widgetset filter receives
+  // the key press; on Qt the plain X root window is used.
+  {$IFDEF LCLGTK2}
+  Result := gdk_x11_drawable_get_xid(FRoot);
+  {$ENDIF}
+  {$IFDEF LCLGTK3}
+  Result := gdk_x11_window_get_xid(FRoot);
+  {$ENDIF}
+  {$IFDEF QT}
+  Result := DefaultRootWindow(FDisplay);
+  {$ENDIF}
+end;
+
 function TUnixHotkeyManager.InternalRegisterShortcut(AShortcut: TShortCutEx;
   ARegister: Boolean): Boolean;
 var
-  Modifier: LongWord;
-  KeySym, ShiftSym: TKeySym;
-  KeyCode: LongWord;
   Window: TWindow;
-  Key: Word;
-  ShiftState: TShiftState;
 begin
   //Global hotkeys require X11 (XGrabKey). On sessions without X11
   //(e.g. pure Wayland) FDisplay is nil and registration is not possible.
-  if FDisplay = nil then
+  if (FDisplay = nil) or (FX11 = nil) then
     Exit(False);
 
-  ShortCutToKey(AShortcut.SimpleShortcut, Key, ShiftState);
+  Window := X11Window;
+  if ARegister then
+    Result := FX11.Grab(AShortcut.SimpleShortcut, Window)
+  else
+    Result := FX11.Ungrab(AShortcut.SimpleShortcut, Window);
 
-  Result := Key <> 0;
-  if (Result) then
+  if Result then
   begin
-    Modifier := ShiftToMod(ShiftState);
-    KeySym := KeyToSym(Key);
-    if KeySym = 0 then
-      Exit(False); // key the X11 backend cannot express
-    KeyCode := XKeysymToKeycode(FDisplay, KeySym);
-    if KeyCode = 0 then
-      Exit(False); // key not present in the current keyboard mapping
-
-    {$IFDEF LCLGTK2}
-    Window := gdk_x11_drawable_get_xid(FRoot);
-    {$ENDIF}
-
-    {$IFDEF LCLGTK3}
-    Window := gdk_x11_window_get_xid(FRoot);
-    {$ENDIF}
-
-    {$IFDEF QT}
-    Window := DefaultRootWindow(FDisplay);
-    {$ENDIF}
-
-    if ARegister then
-      CaptureKey(FDisplay, KeyCode, Modifier, Window)
-    else
-      ReleaseKey(FDisplay, KeyCode, Modifier, Window);
-
-    ShiftSym := XKeycodeToKeysym(FDisplay, KeyCode, 1);
-
-    if (ShiftSym <> 0) and (KeySym <> ShiftSym) then
-    begin
-      KeyCode := XKeysymToKeycode(FDisplay, ShiftSym);
-      if KeyCode <> 0 then
-      begin
-        if ARegister then
-          CaptureKey(FDisplay, KeyCode, Modifier, Window)
-        else
-          ReleaseKey(FDisplay, KeyCode, Modifier, Window);
-      end;
-    end;
-
+    // The widgetset filter only matters while at least one grab is active.
     if ARegister then
       AddEventFilter
     else
       RemoveEventFilter;
-  end;
-end;
-
-function TUnixHotkeyManager.KeyToSym(Key: Word): TKeySym;
-begin
-  case Key of
-    VK_TAB: Result := XK_TAB;
-    VK_CLEAR: Result := XK_CLEAR;
-    VK_RETURN: Result := XK_RETURN;
-    VK_MENU: Result := XK_MENU;
-    VK_ESCAPE: Result := XK_ESCAPE;
-    VK_PAUSE: Result := XK_PAUSE;
-    VK_SPACE: Result := XK_SPACE;
-    VK_PRIOR: Result := XK_PRIOR;
-    VK_NEXT: Result := XK_NEXT;
-    VK_END: Result := XK_END;
-    VK_HOME: Result := XK_HOME;
-    VK_LEFT: Result := XK_LEFT;
-    VK_UP: Result := XK_UP;
-    VK_RIGHT: Result := XK_RIGHT;
-    VK_DOWN: Result := XK_DOWN;
-    VK_SELECT: Result := XK_SELECT;
-    VK_EXECUTE: Result := XK_EXECUTE;
-    VK_SNAPSHOT: Result := XK_PRINT;
-    VK_INSERT: Result := XK_INSERT;
-    VK_DELETE: Result := XK_DELETE;
-    VK_HELP: Result := XK_HELP;
-    VK_0: Result := XK_0;
-    VK_1: Result := XK_1;
-    VK_2: Result := XK_2;
-    VK_3: Result := XK_3;
-    VK_4: Result := XK_4;
-    VK_5: Result := XK_5;
-    VK_6: Result := XK_6;
-    VK_7: Result := XK_7;
-    VK_8: Result := XK_8;
-    VK_9: Result := XK_9;
-    VK_A: Result := XK_A;
-    VK_B: Result := XK_B;
-    VK_C: Result := XK_C;
-    VK_D: Result := XK_D;
-    VK_E: Result := XK_E;
-    VK_F: Result := XK_F;
-    VK_G: Result := XK_G;
-    VK_H: Result := XK_H;
-    VK_I: Result := XK_I;
-    VK_J: Result := XK_J;
-    VK_K: Result := XK_K;
-    VK_L: Result := XK_L;
-    VK_M: Result := XK_M;
-    VK_N: Result := XK_N;
-    VK_O: Result := XK_O;
-    VK_P: Result := XK_P;
-    VK_Q: Result := XK_Q;
-    VK_R: Result := XK_R;
-    VK_S: Result := XK_S;
-    VK_T: Result := XK_T;
-    VK_U: Result := XK_U;
-    VK_V: Result := XK_V;
-    VK_W: Result := XK_W;
-    VK_X: Result := XK_X;
-    VK_Y: Result := XK_Y;
-    VK_Z: Result := XK_Z;
-    VK_NUMPAD0: Result := XK_KP_0;
-    VK_NUMPAD1: Result := XK_KP_1;
-    VK_NUMPAD2: Result := XK_KP_2;
-    VK_NUMPAD3: Result := XK_KP_3;
-    VK_NUMPAD4: Result := XK_KP_4;
-    VK_NUMPAD5: Result := XK_KP_5;
-    VK_NUMPAD6: Result := XK_KP_6;
-    VK_NUMPAD7: Result := XK_KP_7;
-    VK_NUMPAD8: Result := XK_KP_8;
-    VK_NUMPAD9: Result := XK_KP_9;
-    VK_MULTIPLY: Result := XK_KP_MULTIPLY;
-    VK_ADD: Result := XK_KP_ADD;
-    VK_SEPARATOR: Result := XK_KP_SEPARATOR;
-    VK_SUBTRACT: Result := XK_KP_SUBTRACT;
-    VK_DECIMAL: Result := XK_KP_DECIMAL;
-    VK_DIVIDE: Result := XK_KP_DIVIDE;
-    VK_F1: Result := XK_F1;
-    VK_F2: Result := XK_F2;
-    VK_F3: Result := XK_F3;
-    VK_F4: Result := XK_F4;
-    VK_F5: Result := XK_F5;
-    VK_F6: Result := XK_F6;
-    VK_F7: Result := XK_F7;
-    VK_F8: Result := XK_F8;
-    VK_F9: Result := XK_F9;
-    VK_F10: Result := XK_F10;
-    VK_F11: Result := XK_F11;
-    VK_F12: Result := XK_F12;
-    VK_F13: Result := XK_F13;
-    VK_F14: Result := XK_F14;
-    VK_F15: Result := XK_F15;
-    VK_F16: Result := XK_F16;
-    VK_F17: Result := XK_F17;
-    VK_F18: Result := XK_F18;
-    VK_F19: Result := XK_F19;
-    VK_F20: Result := XK_F20;
-    VK_F21: Result := XK_F21;
-    VK_F22: Result := XK_F22;
-    VK_F23: Result := XK_F23;
-    VK_F24: Result := XK_F24;
-    VK_LCL_EQUAL: Result := XK_EQUAL;
-    VK_LCL_COMMA: Result := XK_COMMA;
-    VK_LCL_POINT: Result := XK_PERIOD;
-    VK_LCL_SLASH: Result := XK_SLASH;
-    VK_LCL_SEMI_COMMA: Result := XK_SEMICOLON;
-    VK_LCL_MINUS: Result := XK_MINUS;
-    VK_LCL_OPEN_BRACKET: Result := XK_BRACKETLEFT;
-    VK_LCL_CLOSE_BRACKET: Result := XK_BRACKETRIGHT;
-    VK_LCL_BACKSLASH: Result := XK_BACKSLASH;
-    VK_LCL_TILDE: Result := XK_GRAVE;
-    VK_LCL_QUOTE: Result := XK_SINGLELOWQUOTEMARK;
-  else
-    Result := 0;
-  end;
-end;
-
-function TUnixHotkeyManager.SymToKey(Sym: TKeySym): Word;
-begin
-  case Sym of
-    XK_TAB: Result := VK_TAB;
-    XK_CLEAR: Result := VK_CLEAR;
-    XK_RETURN: Result := VK_RETURN;
-    XK_MENU: Result := VK_MENU;
-    XK_ESCAPE: Result := VK_ESCAPE;
-    XK_PAUSE: Result := VK_PAUSE;
-    XK_SPACE: Result := VK_SPACE;
-    XK_PRIOR: Result := VK_PRIOR;
-    XK_NEXT: Result := VK_NEXT;
-    XK_END: Result := VK_END;
-    XK_HOME: Result := VK_HOME;
-    XK_LEFT: Result := VK_LEFT;
-    XK_UP: Result := VK_UP;
-    XK_RIGHT: Result := VK_RIGHT;
-    XK_DOWN: Result := VK_DOWN;
-    XK_SELECT: Result := VK_SELECT;
-    XK_EXECUTE: Result := VK_EXECUTE;
-    XK_PRINT: Result := VK_SNAPSHOT;
-    XK_INSERT: Result := VK_INSERT;
-    XK_DELETE: Result := VK_DELETE;
-    XK_HELP: Result := VK_HELP;
-    XK_0: Result := VK_0;
-    XK_1: Result := VK_1;
-    XK_2: Result := VK_2;
-    XK_3: Result := VK_3;
-    XK_4: Result := VK_4;
-    XK_5: Result := VK_5;
-    XK_6: Result := VK_6;
-    XK_7: Result := VK_7;
-    XK_8: Result := VK_8;
-    XK_9: Result := VK_9;
-    XK_A: Result := VK_A;
-    XK_B: Result := VK_B;
-    XK_C: Result := VK_C;
-    XK_D: Result := VK_D;
-    XK_E: Result := VK_E;
-    XK_F: Result := VK_F;
-    XK_G: Result := VK_G;
-    XK_H: Result := VK_H;
-    XK_I: Result := VK_I;
-    XK_J: Result := VK_J;
-    XK_K: Result := VK_K;
-    XK_L: Result := VK_L;
-    XK_M: Result := VK_M;
-    XK_N: Result := VK_N;
-    XK_O: Result := VK_O;
-    XK_P: Result := VK_P;
-    XK_Q: Result := VK_Q;
-    XK_R: Result := VK_R;
-    XK_S: Result := VK_S;
-    XK_T: Result := VK_T;
-    XK_U: Result := VK_U;
-    XK_V: Result := VK_V;
-    XK_W: Result := VK_W;
-    XK_X: Result := VK_X;
-    XK_Y: Result := VK_Y;
-    XK_Z: Result := VK_Z;
-    XK_KP_0: Result := VK_NUMPAD0;
-    XK_KP_1: Result := VK_NUMPAD1;
-    XK_KP_2: Result := VK_NUMPAD2;
-    XK_KP_3: Result := VK_NUMPAD3;
-    XK_KP_4: Result := VK_NUMPAD4;
-    XK_KP_5: Result := VK_NUMPAD5;
-    XK_KP_6: Result := VK_NUMPAD6;
-    XK_KP_7: Result := VK_NUMPAD7;
-    XK_KP_8: Result := VK_NUMPAD8;
-    XK_KP_9: Result := VK_NUMPAD9;
-    XK_KP_MULTIPLY: Result := VK_MULTIPLY;
-    XK_KP_ADD: Result := VK_ADD;
-    XK_KP_SEPARATOR: Result := VK_SEPARATOR;
-    XK_KP_SUBTRACT: Result := VK_SUBTRACT;
-    XK_KP_DECIMAL: Result := VK_DECIMAL;
-    XK_KP_DIVIDE: Result := VK_DIVIDE;
-    XK_F1: Result := VK_F1;
-    XK_F2: Result := VK_F2;
-    XK_F3: Result := VK_F3;
-    XK_F4: Result := VK_F4;
-    XK_F5: Result := VK_F5;
-    XK_F6: Result := VK_F6;
-    XK_F7: Result := VK_F7;
-    XK_F8: Result := VK_F8;
-    XK_F9: Result := VK_F9;
-    XK_F10: Result := VK_F10;
-    XK_F11: Result := VK_F11;
-    XK_F12: Result := VK_F12;
-    XK_F13: Result := VK_F13;
-    XK_F14: Result := VK_F14;
-    XK_F15: Result := VK_F15;
-    XK_F16: Result := VK_F16;
-    XK_F17: Result := VK_F17;
-    XK_F18: Result := VK_F18;
-    XK_F19: Result := VK_F19;
-    XK_F20: Result := VK_F20;
-    XK_F21: Result := VK_F21;
-    XK_F22: Result := VK_F22;
-    XK_F23: Result := VK_F23;
-    XK_F24: Result := VK_F24;
-    XK_EQUAL: Result := VK_LCL_EQUAL;
-    XK_COMMA: Result := VK_LCL_COMMA;
-    XK_PERIOD: Result := VK_LCL_POINT;
-    XK_SLASH: Result := VK_LCL_SLASH;
-    XK_SEMICOLON: Result := VK_LCL_SEMI_COMMA;
-    XK_MINUS: Result := VK_LCL_MINUS;
-    XK_BRACKETLEFT: Result := VK_LCL_OPEN_BRACKET;
-    XK_BRACKETRIGHT: Result := VK_LCL_CLOSE_BRACKET;
-    XK_BACKSLASH: Result := VK_LCL_BACKSLASH;
-    XK_GRAVE: Result := VK_LCL_TILDE;
-    XK_SINGLELOWQUOTEMARK: Result := VK_LCL_QUOTE;
-  else
-    Result := 0;
   end;
 end;
 
@@ -669,17 +342,37 @@ begin
     FPortal.ProcessPending;
 end;
 
-function TUnixHotkeyManager.PortalRegister(AShortcut: TShortCutEx): Boolean;
+function TUnixHotkeyManager.EnsurePortal: TPortalHotkeyEngine;
 begin
   if FPortal = nil then
   begin
     FPortal := TPortalHotkeyEngine.Create(Self);
     // Read before the first registration.
     FPortal.AppToken := AppToken;
-    FPortal.BindStrategy := PortalBindStrategy;
   end;
+  Result := FPortal;
+end;
+
+procedure TUnixHotkeyManager.DoBeginUpdate;
+begin
+  // Create the engine now so the update scope is known even before the first
+  // registration (e.g. while the hotkey list is being loaded).
+  if FBackend = uhbPortal then
+    EnsurePortal.BeginUpdate;
+end;
+
+function TUnixHotkeyManager.DoEndUpdate: Boolean;
+begin
+  if (FBackend = uhbPortal) and (FPortal <> nil) then
+    Result := FPortal.EndUpdate
+  else
+    Result := True;
+end;
+
+function TUnixHotkeyManager.PortalRegister(AShortcut: TShortCutEx): Boolean;
+begin
   FLastTrigger := '';
-  Result := FPortal.RegisterShortcut(AShortcut, FLastTrigger);
+  Result := EnsurePortal.RegisterShortcut(AShortcut, FLastTrigger);
   // Only poll once a shortcut is actually bound: the portal delivers
   // Activated signals asynchronously, and the timer drains them from the
   // main loop without needing a background thread.
@@ -709,6 +402,7 @@ begin
   //(QX11Application native interface is nil). Probe X11 ourselves; global
   //hotkeys need X11 anyway (XGrabKey), so without it the manager stays dormant.
   FDisplay := XOpenDisplay(nil);
+  FX11 := TX11KeyGrabber.Create(FDisplay);
 
   {$IFDEF GTK}
   if FDisplay <> nil then
@@ -733,12 +427,13 @@ begin
     FPortalTimer.Enabled := False;
     FreeAndNil(FPortalTimer);
   end;
-  // A per-shortcut unregistration would rebuild the whole portal session
-  // once per hotkey (with a possible dialog each time): release it once.
-  if (FBackend = uhbPortal) and (FPortal <> nil) then
-    FPortal.Reset;
-  // inherited unregisters everything (needs FPortal alive), then free it
+  // inherited Destroy calls DoShutdown, which for the portal only drops the
+  // local tracking (no unbind) and for X11 releases the grabs.
   inherited Destroy;
+  // Now that no shortcut object is referenced, close the session without
+  // touching the persisted preferences.
+  if FPortal <> nil then
+    FPortal.Shutdown;
   FreeAndNil(FPortal);
   {$IFDEF QT}
   // The native event filter is owned by LCL's Qt binding, not by the
@@ -749,6 +444,8 @@ begin
     FQNativeEventFilter := nil;
   end;
   {$ENDIF}
+  // The grabber borrows the display; drop it before closing the connection.
+  FreeAndNil(FX11);
   if FDisplay <> nil then
   begin
     XCloseDisplay(FDisplay);
@@ -756,14 +453,18 @@ begin
   end;
 end;
 
+procedure TUnixHotkeyManager.DoShutdown;
+begin
+  // Wayland portal bindings survive the application exit by design: do not
+  // simulate Unregister on teardown or the user's desktop preferences would be
+  // destroyed. X11 (and the no-backend case) release their grabs as usual.
+  if FBackend = uhbPortal then
+    ForgetAllHotkeys
+  else
+    inherited DoShutdown;
+end;
+
 function TUnixHotkeyManager.IsHotkeyAvailable(Shortcut: TShortCut): Boolean;
-var
-  Key, Modifier: Word;
-  ShiftState: TShiftState;
-  KeySym: TKeySym;
-  KeyCode: LongWord;
-  Window: TWindow;
-  OldHandler: TXErrorHandler;
 begin
   Result := False;
 
@@ -777,48 +478,9 @@ begin
 
   case FBackend of
     uhbX11:
-      begin
-        //Probe with a temporary grab on the same window the real registration
-        //would use: grabbing a key already taken by another client raises
-        //BadAccess asynchronously, so a local X error handler is installed.
-        if FDisplay = nil then
-          Exit;
-
-        ShortCutToKey(Shortcut, Key, ShiftState);
-        if Key = 0 then
-          Exit;
-
-        KeySym := KeyToSym(Key);
-        if KeySym = 0 then
-          Exit;
-
-        KeyCode := XKeysymToKeycode(FDisplay, KeySym);
-        if KeyCode = 0 then
-          Exit;
-
-        Modifier := ShiftToMod(ShiftState);
-
-        Window := DefaultRootWindow(FDisplay);
-        {$IFDEF LCLGTK2}
-        Window := gdk_x11_drawable_get_xid(FRoot);
-        {$ENDIF}
-        {$IFDEF LCLGTK3}
-        Window := gdk_x11_window_get_xid(FRoot);
-        {$ENDIF}
-
-        OldHandler := XSetErrorHandler(@HookXErrorHandler);
-        try
-          HookXError := False;
-          XGrabKey(FDisplay, KeyCode, Modifier and NotLock, Window, 1,
-            GrabModeAsync, GrabModeAsync);
-          XSync(FDisplay, False);
-          Result := not HookXError;
-          if Result then
-            XUngrabKey(FDisplay, KeyCode, Modifier and NotLock, Window);
-        finally
-          XSetErrorHandler(OldHandler);
-        end;
-      end;
+      // Probe with a temporary grab on the same window the real registration
+      // would use; TX11KeyGrabber handles the asynchronous BadAccess.
+      Result := (FX11 <> nil) and FX11.IsAvailable(Shortcut, X11Window);
     uhbPortal:
       //The portal only reports which shortcuts it actually bound at bind
       //time; a dry-run probe would open a session (and possibly a dialog)
@@ -830,6 +492,47 @@ begin
     //registered, so no shortcut is available.
     Result := False;
   end;
+end;
+
+function TUnixHotkeyManager.QueryRegisteredById(const ActionId: String;
+  out AssignedTrigger: String): THotkeyQueryStatus;
+var
+  Info: TPortalShortcutInfo;
+begin
+  AssignedTrigger := '';
+  if (FBackend <> uhbPortal) or (ActionId = '') then
+    Exit(hqsUnknown);
+  Info.Id := '';
+  Info.ActionKey := '';
+  Info.Trigger := '';
+  Info.Description := '';
+  Result := EnsurePortal.QueryByActionKey(ActionId, Info);
+  if Result = hqsPresent then
+    AssignedTrigger := Info.Trigger;
+end;
+
+function TUnixHotkeyManager.QueryRegisteredByShortcut(Shortcut: TShortCut;
+  var ActionIds: TStringList): THotkeyQueryStatus;
+var
+  Key: Word;
+  Shift: TShiftState;
+  Acc: String;
+  Matches: TPortalShortcutArray;
+  I: Integer;
+begin
+  if ActionIds = nil then
+    Exit(hqsUnknown); // no place to report matches
+  ActionIds.Clear;
+  if (FBackend <> uhbPortal) or (Shortcut = 0) then
+    Exit(hqsUnknown);
+  ShortCutToKey(Shortcut, Key, Shift);
+  Acc := PortalAccelerator(Key, Shift);
+  if Acc = '' then
+    Exit(hqsUnknown);
+  Result := EnsurePortal.QueryByTrigger(Acc, Matches);
+  if Result = hqsPresent then
+    for I := 0 to High(Matches) do
+      ActionIds.Add(Matches[I].ActionKey); // host-level keys, not portal ids
 end;
 
 end.

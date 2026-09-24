@@ -41,6 +41,7 @@ type
       FNotify: TKeyNotifyEvent;
       FIndex: Integer;
       FTag: Integer;
+      FActionId: String;
 
       function GetShortcut: TShortcut;
       procedure SetShortcut(AValue: TShortcut);
@@ -51,6 +52,13 @@ type
       property Notify: TKeyNotifyEvent read FNotify write FNotify;
       property Index: Integer read FIndex write FIndex;
       property Tag: Integer read FTag write FTag;
+      { Stable identity of the action this shortcut belongs to, supplied by the
+        host application. Backends with a persistent store (the Wayland
+        GlobalShortcuts portal) use it to keep the same binding when the key
+        combination changes. It is independent from Tag, which is a runtime
+        callback value and may change between runs. Empty when the host did not
+        provide one: such shortcuts fall back to Tag, then to the key. }
+      property ActionId: String read FActionId write FActionId;
 
       function ToText: String;
 
@@ -95,6 +103,7 @@ begin
 
   FIndex := -1;
   FNotify := nil;
+  FActionId := '';
   Self.SimpleShortcut := AShortCut;
 end;
 

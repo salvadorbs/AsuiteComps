@@ -18,10 +18,11 @@ Libraries:
 
 | Unit | Description |
 |---|---|
-| `library/Hotkeys.ShortcutEx.pas` | `TShortcutEx`: shortcut value object (key, modifiers, tag, notify callback) |
-| `library/Hotkeys.Manager.pas` | `TBaseHotkeyManager`: OS-independent global-hotkey list management (`AppToken`, `PortalBindStrategy`) |
+| `library/Hotkeys.ShortcutEx.pas` | `TShortcutEx`: shortcut value object (key, modifiers, tag, stable `ActionId`, notify callback) |
+| `library/Hotkeys.Manager.pas` | `TBaseHotkeyManager`: OS-independent global-hotkey list management (`AppToken`, registration queries) |
 | `library/platform/win/Hotkeys.Manager.Platform.pas` | Windows implementation (`RegisterHotKey`, one message window per manager) |
-| `library/platform/unix/Hotkeys.Manager.Platform.pas` | Unix implementation (X11 `XGrabKey`; GTK2/GTK3/Qt5/Qt6). `IsHotkeyAvailable` probes X11; safely dormant when no X11 display exists (e.g. pure Wayland) |
+| `library/platform/unix/Hotkeys.Manager.Platform.pas` | Unix implementation: backend selection, widgetset filter, portal delegation. Uses `Hotkeys.Manager.X11` |
+| `library/platform/unix/Hotkeys.Manager.X11.pas` | X11 primitives: LCL<->X11 conversions and `TX11KeyGrabber` (grab/ungrab/probe with asynchronous-error handling and rollback) |
 | `library/Hotkeys.Manager.Portal.pas` | Wayland `GlobalShortcuts` portal backend (freedesktop portal over `libdbus`), selected when X11 is unavailable |
 
 Qt uses the native event filter provided by LCL's Qt binding, so no external
@@ -189,8 +190,62 @@ manager that binds shortcuts system-wide:
   `ProcessPending` from its main loop; the manager already installs a timer.
 
 `TBaseHotkeyManager.AppToken` (namespacing, frozen after the first
-registration on the portal) and `TBaseHotkeyManager.PortalBindStrategy`
-(`pbsAuto` / `pbsSpecCompliant` / `pbsIncremental`) tune the portal backend.
+registration on the portal) namespaces the portal session, request handles and
+shortcut ids. The portal backend always applies the spec-compliant policy: a
+fresh session for every change, so `BindShortcuts` is called once per session.
+No desktop is inspected.
+
+On teardown the portal backend closes the session **without** unbinding: a
+Wayland binding is persistent and belongs to the user's desktop settings.
+`TBaseHotkeyManager.ClearAllHotkeys` / `UnregisterNotify` remove the action
+from the active set while the manager runs; the portal engine's `Reset` is the
+explicit "remove everything" operation.
+
+### Stable action identity
+
+A portal binding is persistent: it must be tied to the *action*, not to the key
+combination, or changing the shortcut would create a new desktop entry. Pass a
+stable id with `RegisterNotifyEx(Shortcut, Notify, Tag, ActionId)`;
+`TShortcutEx.ActionId` is the public host-level identity used by the portal
+backend to derive its shortcut id. `Tag` is a runtime callback value kept as
+the compatibility fallback for existing callers; anonymous shortcuts fall back
+to the key. The portal id is an injective encoding of the host key, so distinct
+ActionIds never collide (`open-home` and `open_home` are different actions).
+
+### Querying the portal
+
+The portal can be asked, read-only, whether an action or a key combination is
+currently registered:
+
+```pascal
+var Status: THotkeyQueryStatus; Trigger: String; Match: THotkeyTriggerMatch;
+Status := HotkeyManager.QueryRegisteredById('open-home', Trigger);
+```
+
+`QueryRegisteredById` / `QueryRegisteredByShortcut` return a tri-state
+(`hqsUnknown` / `hqsAbsent` / `hqsPresent`): a plain Boolean could not tell
+"not registered" apart from "cannot be checked". `QueryRegisteredByShortcut`
+reports host-level action keys (the same strings accepted by
+`QueryRegisteredById`). They answer about the shortcuts the portal exposes to
+this application/session, not about every global shortcut of the desktop, and
+never bind or unbind anything. Backends without a queryable store (X11,
+Windows) return `hqsUnknown`.
+
+The portal only returns a human-readable `trigger_description`, so trigger
+comparison is tri-state too: `THotkeyTriggerMatch` (`ptmUnknown` / `ptmNo` /
+`ptmYes`). A description that cannot be interpreted is `ptmUnknown`, never
+mistaken for a different trigger.
+
+A registration is only confirmed once the portal accepted the bind: outside a
+bulk update `RegisterNotify` reflects the bind response; inside
+`BeginHotkeyUpdate`/`EndHotkeyUpdate` the authoritative verdict is the one
+returned by `EndHotkeyUpdate`. When a batch fails, the manager rolls it back
+(additions dropped, removals restored) so the state stays consistent and a
+retry is possible.
+
+`OnTriggerChanged` reports the trigger actually assigned by the desktop;
+`OnTriggerChangedEx` also carries the stable `ActionId`, which is the reliable
+identity when several actions share a `Tag` or use `Tag = -1`.
 
 ## Requirements
 
@@ -209,7 +264,7 @@ registration on the portal) and `TBaseHotkeyManager.PortalBindStrategy`
 
 ## Automated tests
 
-The `tests/` directory holds an FPCUnit suite (116 tests) covering every
+The `tests/` directory holds an FPCUnit suite (144 tests) covering every
 component, the hotkey manager logic and the platform managers:
 
 ```bash
