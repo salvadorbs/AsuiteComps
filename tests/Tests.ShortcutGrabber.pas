@@ -19,6 +19,7 @@ type
     procedure TestImagesEmptyByDefault;
     procedure TestImagesAssignAndClear;
     procedure TestDefaultsMessages;
+    procedure TestDefaultsCaptions;
     procedure TestFormLoadsEmbeddedImages;
     procedure TestFormHotkeySetsKeyControl;
     procedure TestFormModifierButtons;
@@ -104,6 +105,48 @@ begin
   AssertTrue('MessageNoKey', ShortcutGrabberDefaults.MessageNoKey <> '');
   AssertTrue('MessageNoModifier', ShortcutGrabberDefaults.MessageNoModifier <> '');
   AssertTrue('MessageNotAvailable', ShortcutGrabberDefaults.MessageNotAvailable <> '');
+end;
+
+procedure TTestShortcutGrabber.TestDefaultsCaptions;
+var
+  Form: TfrmShortcutGrabber;
+  OldCaption, OldInfo, OldOk, OldCancel: string;
+begin
+  AssertTrue('Caption', ShortcutGrabberDefaults.Caption <> '');
+  AssertTrue('InfoText', ShortcutGrabberDefaults.InfoText <> '');
+  AssertTrue('OkCaption', ShortcutGrabberDefaults.OkCaption <> '');
+  AssertTrue('CancelCaption', ShortcutGrabberDefaults.CancelCaption <> '');
+
+  OldCaption := ShortcutGrabberDefaults.Caption;
+  OldInfo := ShortcutGrabberDefaults.InfoText;
+  OldOk := ShortcutGrabberDefaults.OkCaption;
+  OldCancel := ShortcutGrabberDefaults.CancelCaption;
+  try
+    { The form applies the defaults at creation, so an application only has to
+      set ShortcutGrabberDefaults once. }
+    ShortcutGrabberDefaults.Caption := 'Pick';
+    ShortcutGrabberDefaults.InfoText := 'Info';
+    ShortcutGrabberDefaults.OkCaption := 'Yes';
+    ShortcutGrabberDefaults.CancelCaption := 'No';
+    Form := TfrmShortcutGrabber.Create(nil);
+    try
+      AssertEquals('Form caption', 'Pick', Form.Caption);
+      AssertEquals('Info label', 'Info', Form.lblInfo.Caption);
+      AssertEquals('Ok button', 'Yes', Form.btnOk.Caption);
+      AssertEquals('Cancel button', 'No', Form.btnCancel.Caption);
+
+      { Per-instance overrides win over the defaults. }
+      Form.InfoText := 'Local info';
+      AssertEquals('Per-instance override', 'Local info', Form.InfoText);
+    finally
+      Form.Free;
+    end;
+  finally
+    ShortcutGrabberDefaults.Caption := OldCaption;
+    ShortcutGrabberDefaults.InfoText := OldInfo;
+    ShortcutGrabberDefaults.OkCaption := OldOk;
+    ShortcutGrabberDefaults.CancelCaption := OldCancel;
+  end;
 end;
 
 procedure TTestShortcutGrabber.TestFormLoadsEmbeddedImages;

@@ -49,6 +49,14 @@ resourcestring
     'This hotkey is being used already by another software or by the ' +
     'system itself. Please choose another one.';
 
+  { Default captions of the grabber dialog. Like the messages above, they are
+    only defaults: an application overrides them through
+    ShortcutGrabberDefaults so the component stays translation-free. }
+  SShortcutCaption    = 'Choose hotkey...';
+  SShortcutInfoText   = 'Select modifiers above, then enter desired key:';
+  SShortcutOkCaption  = 'Ok';
+  SShortcutCancelCaption = 'Cancel';
+
 type
   { Optional validator used by the dialog to reject a shortcut already taken
     by another application or by the system. Returning False keeps the dialog
@@ -108,6 +116,10 @@ type
     FMessageNoKey: string;
     FMessageNoModifier: string;
     FMessageNotAvailable: string;
+    FCaption: string;
+    FInfoText: string;
+    FOkCaption: string;
+    FCancelCaption: string;
     FImages: TShortcutGrabberImages;
     FOnValidateHotkey: TShortcutValidateEvent;
   public
@@ -117,6 +129,12 @@ type
     property MessageNoKey: string read FMessageNoKey write FMessageNoKey;
     property MessageNoModifier: string read FMessageNoModifier write FMessageNoModifier;
     property MessageNotAvailable: string read FMessageNotAvailable write FMessageNotAvailable;
+    { Localizable captions of the dialog. An application sets them once from
+      its own resource strings; leaving them as-is keeps the English defaults. }
+    property Caption: string read FCaption write FCaption;
+    property InfoText: string read FInfoText write FInfoText;
+    property OkCaption: string read FOkCaption write FOkCaption;
+    property CancelCaption: string read FCancelCaption write FCancelCaption;
     property Images: TShortcutGrabberImages read FImages;
     property OnValidateHotkey: TShortcutValidateEvent read FOnValidateHotkey write FOnValidateHotkey;
   end;
@@ -151,11 +169,17 @@ type
     FMessageNoKey: string;
     FMessageNoModifier: string;
     FMessageNotAvailable: string;
+    FInfoText: string;
+    FOkCaption: string;
+    FCancelCaption: string;
 
     function GetMessageNoKey: string;
     function GetMessageNoModifier: string;
     function GetMessageNotAvailable: string;
     function GetValidateHotkey: TShortcutValidateEvent;
+    function GetInfoText: string;
+    function GetOkCaption: string;
+    function GetCancelCaption: string;
 
     function GetModifierFromGUI: TShiftState;
     function GetKeyFromGUI: Word;
@@ -200,6 +224,13 @@ type
     property MessageNoKey: string read GetMessageNoKey write FMessageNoKey;
     property MessageNoModifier: string read GetMessageNoModifier write FMessageNoModifier;
     property MessageNotAvailable: string read GetMessageNotAvailable write FMessageNotAvailable;
+
+    { Per-instance captions. Empty values fall back to ShortcutGrabberDefaults
+      (and then to the component's English defaults). The window title is the
+      inherited Caption and is seeded from ShortcutGrabberDefaults.Caption. }
+    property InfoText: string read GetInfoText write FInfoText;
+    property OkCaption: string read GetOkCaption write FOkCaption;
+    property CancelCaption: string read GetCancelCaption write FCancelCaption;
 
     { Updates the interface (modifier buttons + key control) from a shortcut. }
     procedure SetGuiFromHotkey(AHotkey: TShortCut);
@@ -319,6 +350,10 @@ begin
   FMessageNoKey        := SShortcutNoKey;
   FMessageNoModifier   := SShortcutNoModifier;
   FMessageNotAvailable := SShortcutNotAvailable;
+  FCaption             := SShortcutCaption;
+  FInfoText            := SShortcutInfoText;
+  FOkCaption           := SShortcutOkCaption;
+  FCancelCaption       := SShortcutCancelCaption;
 end;
 
 destructor TShortcutGrabberDefaults.Destroy;
@@ -346,6 +381,13 @@ procedure TfrmShortcutGrabber.FormCreate(Sender: TObject);
 begin
   FCanClose := False;
   FHotkey := 0;
+
+  // Apply the localizable captions from the process-wide defaults; a host that
+  // creates the form directly can still override them afterwards.
+  Caption := ShortcutGrabberDefaults.Caption;
+  lblInfo.Caption := InfoText;
+  btnOk.Caption := OkCaption;
+  btnCancel.Caption := CancelCaption;
 
   LoadImages;
 end;
@@ -505,6 +547,30 @@ begin
     Result := FOnValidateHotkey
   else
     Result := ShortcutGrabberDefaults.OnValidateHotkey;
+end;
+
+function TfrmShortcutGrabber.GetInfoText: string;
+begin
+  if FInfoText <> '' then
+    Result := FInfoText
+  else
+    Result := ShortcutGrabberDefaults.InfoText;
+end;
+
+function TfrmShortcutGrabber.GetOkCaption: string;
+begin
+  if FOkCaption <> '' then
+    Result := FOkCaption
+  else
+    Result := ShortcutGrabberDefaults.OkCaption;
+end;
+
+function TfrmShortcutGrabber.GetCancelCaption: string;
+begin
+  if FCancelCaption <> '' then
+    Result := FCancelCaption
+  else
+    Result := ShortcutGrabberDefaults.CancelCaption;
 end;
 
 function TfrmShortcutGrabber.GetKeyFromGUI: Word;
