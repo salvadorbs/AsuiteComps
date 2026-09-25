@@ -62,11 +62,11 @@ interface
 
 uses
   Classes, SysUtils, LCLType,
-  Hotkeys.ShortcutEx
+  Hotkeys.ShortcutEx,
+  Hotkeys.Manager
   {$IFDEF UNIX}
   , syncobjs,
-  dbus,
-  Hotkeys.Manager
+  dbus
   {$ENDIF}
   ;
 
