@@ -69,6 +69,7 @@ type
     procedure TestFocusOnButtonClick;
     procedure TestNativeBorder;
     procedure TestSizing;
+    procedure TestPreferredHeightStable;
     procedure TestTabStopProxy;
     procedure TestFontPropagatesToInnerEdit;
     procedure TestButtonOptionsClearWithNil;
@@ -624,6 +625,34 @@ begin
 
     E.AutoSizeHeightIsEditHeight := False;
     AssertFalse('AutoSizeHeightIsEditHeight set', E.AutoSizeHeightIsEditHeight);
+  finally
+    E.Free;
+  end;
+end;
+
+procedure TTestButtonedEdit.TestPreferredHeightStable;
+var
+  E: TButtonedEdit;
+  W1, H1, W2, H2, I: Integer;
+begin
+  { Regression: the preferred height is derived by measuring the inner edit
+    with its native border once and caching it. Re-measuring on every layout
+    used to toggle BorderStyle, which recreates the handle on Win32 and broke
+    the control. The height must be stable and non-zero across calls. }
+  E := TButtonedEdit.Create(nil);
+  try
+    W1 := 0;
+    H1 := 0;
+    E.GetPreferredSize(W1, H1, False, True);
+    AssertTrue('Preferred height is positive', H1 > 0);
+
+    for I := 1 to 5 do
+    begin
+      W2 := 0;
+      H2 := 0;
+      E.GetPreferredSize(W2, H2, False, True);
+      AssertEquals('Preferred height stable', H1, H2);
+    end;
   finally
     E.Free;
   end;

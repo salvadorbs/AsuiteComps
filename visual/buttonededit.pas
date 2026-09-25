@@ -138,6 +138,7 @@ type
     FOnRightButtonClick: TNotifyEvent;
     FMouseInControl: Boolean;
     FRightButton: TGlyphButtonOptions;
+    FNativeEditHeight: Integer;
 
     procedure DoChildMouseEnter(Sender: TObject);
     procedure DoChildMouseLeave(Sender: TObject);
@@ -158,6 +159,7 @@ type
     procedure DrawHighlightFrame(AColor: TColor);
     function CurrentRingSize: Integer;
     function CurrentGapSize: Integer;
+    function NativeEditHeight: Integer;
     procedure UpdateSpacing;
     function MouseIsOverComposite: Boolean;
     procedure SetHovered(AValue: Boolean);
@@ -196,6 +198,7 @@ type
     procedure DoEditTextEditingDone(Sender: TObject); virtual;
     procedure DoEditTextKeyDown(Sender: TObject; var Key: Word; Shift: TShiftState); virtual;
     procedure DoEditTextKeyUp(Sender: TObject; var Key: Word; Shift: TShiftState); virtual;
+    procedure FontChanged(Sender: TObject); override;
     class function GetControlClassDefaultSize: TSize; override;
     procedure Loaded; override;
     procedure MouseEnter; override;
@@ -905,6 +908,38 @@ begin
     Result := 1;
 end;
 
+function TCustomButtonedEdit.NativeEditHeight: Integer;
+var
+  W, H: Integer;
+  OldBorder: TBorderStyle;
+begin
+  //The inner edit is borderless so it does not match a themed TEdit by itself.
+  //Measure it once with the native border and cache the result. Toggling
+  //BorderStyle on every CalculatePreferredSize would call RecreateWnd on
+  //Win32 (TWin32WSWinControl.SetBorderStyle), recreating the handle on each
+  //layout pass, so the measurement (which may allocate the handle) is done
+  //exactly once per instance. The cache is dropped when the scale or the font
+  //changes, because the native height depends on the font metrics.
+  if FNativeEditHeight > 0 then
+    Exit(FNativeEditHeight);
+
+  if FEditText = nil then
+    Exit(0);
+
+  OldBorder := FEditText.BorderStyle;
+  try
+    FEditText.BorderStyle := bsSingle;
+    FEditText.InvalidatePreferredSize;
+    W := 0;
+    H := 0;
+    FEditText.GetPreferredSize(W, H, False, True);
+  finally
+    FEditText.BorderStyle := OldBorder;
+  end;
+  FNativeEditHeight := H;
+  Result := FNativeEditHeight;
+end;
+
 procedure TCustomButtonedEdit.UpdateSpacing;
 begin
   if FLeftButton <> nil then
@@ -918,8 +953,17 @@ end;
 
 procedure TCustomButtonedEdit.ChangeScale(Multiplier, Divider: Integer);
 begin
+  //Font metrics change with the scale: drop the cached native height.
+  FNativeEditHeight := 0;
   inherited ChangeScale(Multiplier, Divider);
   UpdateSpacing;
+end;
+
+procedure TCustomButtonedEdit.FontChanged(Sender: TObject);
+begin
+  //The native height depends on the font metrics: recompute it.
+  FNativeEditHeight := 0;
+  inherited FontChanged(Sender);
 end;
 
 procedure TCustomButtonedEdit.AdjustClientRect(var ARect: TRect);
@@ -964,25 +1008,11 @@ end;
 
 procedure TCustomButtonedEdit.CalculatePreferredSize(var PreferredWidth,
   PreferredHeight: Integer; WithThemeSpace: Boolean);
-var
-  EditPreferredHeight: Integer;
 begin
-  EditPreferredHeight := 0;
   inherited CalculatePreferredSize(PreferredWidth, PreferredHeight, WithThemeSpace);
-  if FEditText <> nil then
-  begin
-    //Measure with the native border so the height matches a TEdit, while the
-    //edit itself stays visually borderless (we draw the frame ourselves).
-    //Changing BorderStyle only updates the widget frame, it does not recreate
-    //the handle.
-    FEditText.BorderStyle := bsSingle;
-    FEditText.InvalidatePreferredSize;
-    FEditText.GetPreferredSize(PreferredWidth, EditPreferredHeight, False, WithThemeSpace);
-    FEditText.BorderStyle := bsNone;
-    if FAutoSizeHeightIsEditHeight then
-      //Native TEdit height + the ring reserved for the simulated frame.
-      PreferredHeight := EditPreferredHeight + 2 * CurrentRingSize;
-  end;
+  if FAutoSizeHeightIsEditHeight then
+    //Native TEdit height + the ring reserved for the simulated frame.
+    PreferredHeight := NativeEditHeight + 2 * CurrentRingSize;
   //Width is user-defined, not auto-sized (like LCL's grouped edit).
   PreferredWidth := 0;
 end;
