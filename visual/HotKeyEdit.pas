@@ -25,7 +25,7 @@ interface
 
 uses
   Classes, SysUtils, Controls, Graphics, ImgList, Menus, StdCtrls, LCLType,
-  LCLProc, ButtonedEdit, ShortcutGrabber;
+  LCLProc, ButtonedEdit, HotKey, ShortcutGrabber;
 
 const
   { Embedded default button images (see ShortcutGrabber.lrs), used when the
@@ -38,14 +38,16 @@ const
 type
   { THotKeyEdit }
 
-  { Read-only "buttoned edit" showing a shortcut. Clicking the edit (or the
-    right button, when no shortcut is set) opens TfrmShortcutGrabber; the right
-    button clears the current shortcut. It reuses the grabber and THotKey, so
-    an application does not need to wire the dialog by hand.
-
-    The right button has default icons (the same ones shipped by ASuite). A
-    host that wants different icons assigns RightButton.Images plus
-    ClearImageIndex/ChooseImageIndex, which then take precedence. }
+  { "Buttoned edit" showing a shortcut. The control is always read-only.
+    - By default clicking the edit (or the right button when no shortcut is set)
+      opens TfrmShortcutGrabber; the right button clears the shortcut.
+    - With ShowGrabberOnClick = False the shortcut is typed directly in the
+      edit (like THotKey): Backspace/Delete clears, a bare key gets Ctrl unless
+      NoModifier is set.
+    - The right button has embedded default icons. A host can assign its own
+      RightButton.Images plus ChooseImageIndex/ClearImageIndex (the width is
+      derived from Images when ImagesWidth is 0); set UseDefaultImages = False
+      to keep the embedded icons disabled. }
   THotKeyEdit = class(TCustomButtonedEdit)
   private
     FHotkey: TShortCut;
@@ -56,19 +58,36 @@ type
     FChooseImageIndex: TImageIndex;
     FButtonVisibleOnlyWithHotkey: Boolean;
     FShowGrabberOnClick: Boolean;
+    FNoModifier: Boolean;
+    FCapture: TShortcutCapture;
+    FInlineCapture: Boolean;
+    FUseDefaultImages: Boolean;
+    FDefaultsWidth: Integer;
 
     function GetHotkey: TShortCut;
+    function GetNoModifier: Boolean;
+    function HotkeyAllowed(AValue: TShortCut): Boolean;
     procedure SetHotkey(AValue: TShortCut);
     function GetHotkeyText: TCaption;
     procedure SetHotkeyText(const AValue: TCaption);
     procedure SetClearImageIndex(AValue: TImageIndex);
     procedure SetChooseImageIndex(AValue: TImageIndex);
     procedure SetButtonVisibleOnlyWithHotkey(AValue: Boolean);
+    procedure SetNoModifier(AValue: Boolean);
+    procedure SetUseDefaultImages(AValue: Boolean);
+    procedure UpdateText;
     procedure DoEditClick(Sender: TObject);
     procedure DoRightButtonClick(Sender: TObject);
     procedure UpdateButton;
+  protected
+    { Inline capture: when ShowGrabberOnClick is False the shortcut is typed
+      directly in the edit (like THotKey). }
+    procedure DoEditTextEnter(Sender: TObject); override;
+    procedure DoEditTextExit(Sender: TObject); override;
+    procedure DoEditTextKeyUp(Sender: TObject; var Key: Word; Shift: TShiftState); override;
   public
     constructor Create(AOwner: TComponent); override;
+    destructor Destroy; override;
 
     { Opens TfrmShortcutGrabber and applies the selected shortcut. }
     procedure OpenGrabber;
@@ -77,6 +96,8 @@ type
   published
     { Shortcut value; 0 means "none". Text is kept in sync. }
     property Hotkey: TShortCut read GetHotkey write SetHotkey;
+    { When True a bare key (no modifier) does not get an implicit Ctrl. }
+    property NoModifier: Boolean read GetNoModifier write SetNoModifier default False;
 
     property Align;
     property Anchors;
@@ -85,7 +106,6 @@ type
     property BiDiMode;
     property BorderColor;
     property BorderSpacing;
-    property BorderStyle default bsNone;
     property CharCase;
     property Color;
     property Constraints;
@@ -97,7 +117,6 @@ type
     property ParentBiDiMode;
     property ParentFont;
     property PopupMenu;
-    property ReadOnly;
     property RightButton;
     property ShowHint;
     property TabOrder;
@@ -114,6 +133,7 @@ type
     //Right button appearance
     property ClearImageIndex: TImageIndex read FClearImageIndex write SetClearImageIndex default -1;
     property ChooseImageIndex: TImageIndex read FChooseImageIndex write SetChooseImageIndex default -1;
+    property UseDefaultImages: Boolean read FUseDefaultImages write SetUseDefaultImages default True;
     property ButtonVisibleOnlyWithHotkey: Boolean read FButtonVisibleOnlyWithHotkey
       write SetButtonVisibleOnlyWithHotkey default False;
     property ShowGrabberOnClick: Boolean read FShowGrabberOnClick
@@ -156,8 +176,15 @@ begin
   FClearImageIndex := -1;
   FChooseImageIndex := -1;
   FShowGrabberOnClick := True;
+  FNoModifier := False;
+  FInlineCapture := False;
+  FUseDefaultImages := True;
+  FDefaultsWidth := 0;
 
-  //The shortcut is chosen through the grabber, never typed.
+  FCapture := TShortcutCapture.Create;
+  FCapture.NoModifier := FNoModifier;
+
+  //The shortcut is chosen through the grabber or typed inline, never freely.
   ReadOnly := True;
 
   //Hook the events of the inner edit / right button.
@@ -167,6 +194,63 @@ begin
   UpdateButton;
 end;
 
+destructor THotKeyEdit.Destroy;
+begin
+  FCapture.Free;
+  inherited Destroy;
+end;
+
+function THotKeyEdit.GetNoModifier: Boolean;
+begin
+  Result := FNoModifier;
+end;
+
+function THotKeyEdit.HotkeyAllowed(AValue: TShortCut): Boolean;
+begin
+  // Clearing (0) is always allowed; otherwise the host validator decides.
+  Result := (AValue = 0) or (not Assigned(FOnValidateHotkey)) or
+    FOnValidateHotkey(AValue);
+end;
+
+procedure THotKeyEdit.SetNoModifier(AValue: Boolean);
+begin
+  if FNoModifier = AValue then
+    Exit;
+  FNoModifier := AValue;
+  if FCapture <> nil then
+    FCapture.NoModifier := AValue;
+end;
+
+procedure THotKeyEdit.DoEditTextEnter(Sender: TObject);
+begin
+  //Type the shortcut inline only when the grabber is disabled and the edit is
+  //read-only (otherwise the user types freely and we parse on editing done).
+  FInlineCapture := (not FShowGrabberOnClick) and ReadOnly and
+    (not (csDesigning in ComponentState));
+  inherited DoEditTextEnter(Sender);
+end;
+
+procedure THotKeyEdit.DoEditTextExit(Sender: TObject);
+begin
+  FInlineCapture := False;
+  inherited DoEditTextExit(Sender);
+end;
+
+procedure THotKeyEdit.DoEditTextKeyUp(Sender: TObject; var Key: Word;
+  Shift: TShiftState);
+begin
+  if FInlineCapture then
+  begin
+    FCapture.Capture(Key, Shift);
+    if HotkeyAllowed(FCapture.Hotkey) then
+      SetHotkey(FCapture.Hotkey)
+    else
+      //Rejected: keep the engine on the accepted value.
+      FCapture.Hotkey := FHotkey;
+  end;
+  inherited DoEditTextKeyUp(Sender, Key, Shift);
+end;
+
 function THotKeyEdit.GetHotkey: TShortCut;
 begin
   Result := FHotkey;
@@ -174,20 +258,31 @@ end;
 
 procedure THotKeyEdit.SetHotkey(AValue: TShortCut);
 begin
+  //Keep the capture engine in sync: it is the starting point for inline typing,
+  //so a stale value would corrupt the next capture.
+  if FCapture <> nil then
+    FCapture.Hotkey := AValue;
+
   if FHotkey = AValue then
     Exit;
 
   FHotkey := AValue;
 
-  if FHotkey = 0 then
-    TCustomButtonedEdit(Self).Text := ''
-  else
-    TCustomButtonedEdit(Self).Text := ShortCutToText(FHotkey);
+  UpdateText;
 
   UpdateButton;
 
   if Assigned(FOnHotkeyChange) then
     FOnHotkeyChange(Self);
+end;
+
+procedure THotKeyEdit.UpdateText;
+begin
+  //ShortCutToText(0) is "Unknown", so handle the empty shortcut explicitly.
+  if FHotkey = 0 then
+    TCustomButtonedEdit(Self).Text := ''
+  else
+    TCustomButtonedEdit(Self).Text := ShortCutToText(FHotkey);
 end;
 
 function THotKeyEdit.GetHotkeyText: TCaption;
@@ -224,23 +319,43 @@ begin
   UpdateButton;
 end;
 
+procedure THotKeyEdit.SetUseDefaultImages(AValue: Boolean);
+begin
+  if FUseDefaultImages = AValue then
+    Exit;
+  FUseDefaultImages := AValue;
+  UpdateButton;
+end;
+
 procedure THotKeyEdit.UpdateButton;
 var
   ClearIdx, ChooseIdx: TImageIndex;
 begin
-  if (RightButton.Images <> nil) and (RightButton.Images <> DefaultHotKeyEditImages) then
+  if FUseDefaultImages and
+     ((RightButton.Images = nil) or (RightButton.Images = DefaultHotKeyEditImages)) then
   begin
-    // Host-provided icons take precedence (ASuite sets them from its theme).
+    // No host icons: use the embedded defaults.
+    RightButton.Images := GetDefaultHotKeyEditImages;
+    RightButton.ImagesWidth := GetDefaultHotKeyEditImages.Width;
+    FDefaultsWidth := RightButton.ImagesWidth;
+    ClearIdx := HOTKEYEDIT_CLEAR_INDEX;
+    ChooseIdx := HOTKEYEDIT_CHOOSE_INDEX;
+  end
+  else
+  if RightButton.Images <> nil then
+  begin
+    // Host-provided icons take precedence; derive the width from the list when
+    // the current value is still the one used for the embedded defaults.
+    if (RightButton.ImagesWidth = 0) or (RightButton.ImagesWidth = FDefaultsWidth) then
+      RightButton.ImagesWidth := RightButton.Images.Width;
     ClearIdx := FClearImageIndex;
     ChooseIdx := FChooseImageIndex;
   end
   else
   begin
-    // No host icons: fall back to the embedded defaults.
-    RightButton.Images := GetDefaultHotKeyEditImages;
-    RightButton.ImagesWidth := GetDefaultHotKeyEditImages.Width;
-    ClearIdx := HOTKEYEDIT_CLEAR_INDEX;
-    ChooseIdx := HOTKEYEDIT_CHOOSE_INDEX;
+    // No images at all: the button has no glyph.
+    ClearIdx := -1;
+    ChooseIdx := -1;
   end;
 
   if FHotkey <> 0 then

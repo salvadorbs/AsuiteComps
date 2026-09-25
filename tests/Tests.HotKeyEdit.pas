@@ -5,8 +5,8 @@ unit Tests.HotKeyEdit;
 interface
 
 uses
-  fpcunit, testregistry, Classes, SysUtils, Forms, Controls, Menus, LCLProc,
-  LCLType, ImgList, HotKeyEdit;
+  fpcunit, testregistry, Classes, SysUtils, Forms, Controls, StdCtrls, Menus,
+  LCLProc, LCLType, ImgList, HotKeyEdit;
 
 type
 
@@ -16,6 +16,8 @@ type
   private
     FChanged: Integer;
     procedure OnHotkeyChanged(Sender: TObject);
+    function FindInnerEdit(AE: THotKeyEdit): TEdit;
+    function RejectCtrlQ(AShortcut: TShortCut): Boolean;
   protected
     procedure SetUp; override;
   published
@@ -30,6 +32,12 @@ type
     procedure TestDefaultIcons;
     procedure TestButtonImageIndex;
     procedure TestButtonImageIndexReset;
+    procedure TestNoModifier;
+    procedure TestUseDefaultImages;
+    procedure TestInlineCapture;
+    procedure TestInlineCaptureKeepsProgrammaticHotkey;
+    procedure TestInlineCaptureValidator;
+    procedure TestCustomImagesDeriveWidth;
   end;
 
 implementation
@@ -42,6 +50,21 @@ var
 procedure TTestHotKeyEdit.OnHotkeyChanged(Sender: TObject);
 begin
   Inc(FChanged);
+end;
+
+function TTestHotKeyEdit.FindInnerEdit(AE: THotKeyEdit): TEdit;
+var
+  I: Integer;
+begin
+  Result := nil;
+  for I := 0 to AE.ControlCount - 1 do
+    if AE.Controls[I] is TEdit then
+      Exit(TEdit(AE.Controls[I]));
+end;
+
+function TTestHotKeyEdit.RejectCtrlQ(AShortcut: TShortCut): Boolean;
+begin
+  Result := AShortcut <> ShortCut(VK_Q, [ssCtrl]);
 end;
 
 procedure TTestHotKeyEdit.SetUp;
@@ -248,6 +271,127 @@ begin
 
     E.ChooseImageIndex := -1;
     AssertEquals('Choose reset to none', -1, E.RightButton.ImageIndex);
+  finally
+    E.Free;
+    List.Free;
+  end;
+end;
+
+procedure TTestHotKeyEdit.TestNoModifier;
+var
+  E: THotKeyEdit;
+begin
+  E := THotKeyEdit.Create(nil);
+  try
+    AssertFalse('Default NoModifier', E.NoModifier);
+    E.NoModifier := True;
+    AssertTrue('NoModifier set', E.NoModifier);
+    E.NoModifier := False;
+    AssertFalse('NoModifier reset', E.NoModifier);
+  finally
+    E.Free;
+  end;
+end;
+
+procedure TTestHotKeyEdit.TestUseDefaultImages;
+var
+  E: THotKeyEdit;
+begin
+  { UseDefaultImages = False keeps the host in control of RightButton.Images. }
+  E := THotKeyEdit.Create(nil);
+  try
+    AssertTrue('Default UseDefaultImages', E.UseDefaultImages);
+    E.UseDefaultImages := False;
+    E.RightButton.Images := nil;
+    E.ClearImageIndex := 0; // triggers UpdateButton
+    AssertNull('Default images not re-assigned', E.RightButton.Images);
+  finally
+    E.Free;
+  end;
+end;
+
+procedure TTestHotKeyEdit.TestInlineCapture;
+var
+  E: THotKeyEdit;
+  Ed: TEdit;
+  Key: Word;
+begin
+  { ShowGrabberOnClick = False: typing the combo in the focused edit captures it. }
+  E := THotKeyEdit.Create(nil);
+  try
+    E.ShowGrabberOnClick := False;
+    Ed := FindInnerEdit(E);
+    AssertNotNull('Inner edit found', Ed);
+    Ed.OnEnter(Ed); // arms the inline capture
+    Key := VK_F5;
+    Ed.OnKeyUp(Ed, Key, [ssCtrl]);
+    AssertEquals('Captured inline', Integer(ShortCut(VK_F5, [ssCtrl])), Integer(E.Hotkey));
+  finally
+    E.Free;
+  end;
+end;
+
+procedure TTestHotKeyEdit.TestInlineCaptureKeepsProgrammaticHotkey;
+var
+  E: THotKeyEdit;
+  Ed: TEdit;
+  Key: Word;
+begin
+  { Regression: the capture engine used to be out of sync with a hotkey set
+    programmatically, so a non-capturable key would reset it to 0. }
+  E := THotKeyEdit.Create(nil);
+  try
+    E.ShowGrabberOnClick := False;
+    E.Hotkey := ShortCut(VK_F5, [ssCtrl]);
+    Ed := FindInnerEdit(E);
+    AssertNotNull('Inner edit found', Ed);
+    Ed.OnEnter(Ed);
+    Key := VK_SHIFT; // not representable as a shortcut
+    Ed.OnKeyUp(Ed, Key, [ssShift]);
+    AssertEquals('Programmatic hotkey kept',
+      Integer(ShortCut(VK_F5, [ssCtrl])), Integer(E.Hotkey));
+  finally
+    E.Free;
+  end;
+end;
+
+procedure TTestHotKeyEdit.TestInlineCaptureValidator;
+var
+  E: THotKeyEdit;
+  Ed: TEdit;
+  Key: Word;
+begin
+  { The host validator must also apply to inline capture. }
+  E := THotKeyEdit.Create(nil);
+  try
+    E.ShowGrabberOnClick := False;
+    E.OnValidateHotkey := @RejectCtrlQ;
+    Ed := FindInnerEdit(E);
+    Ed.OnEnter(Ed);
+    Key := VK_Q;
+    Ed.OnKeyUp(Ed, Key, [ssCtrl]);
+    AssertEquals('Rejected -> no hotkey', 0, Integer(E.Hotkey));
+  finally
+    E.Free;
+  end;
+end;
+
+procedure TTestHotKeyEdit.TestCustomImagesDeriveWidth;
+var
+  E: THotKeyEdit;
+  List: TImageList;
+begin
+  { A host image list narrower/wider than the embedded default must update the
+    button width, even though the default assignment already set it. }
+  E := THotKeyEdit.Create(nil);
+  List := TImageList.Create(nil);
+  try
+    List.Width := 24;
+    List.Height := 24;
+    E.UseDefaultImages := False;
+    E.RightButton.Images := List;
+    E.ChooseImageIndex := 0; // triggers UpdateButton
+    AssertEquals('Derived width from host list', 24, E.RightButton.ImagesWidth);
   finally
     E.Free;
     List.Free;
