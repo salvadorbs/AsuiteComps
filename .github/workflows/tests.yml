@@ -151,3 +151,22 @@ jobs:
       run: |
         chmod +x "${{ env.COMPS_SOURCE }}/tests/run_tests.sh"
         "${{ env.COMPS_SOURCE }}/tests/run_tests.sh" --lazbuild="${{ matrix.config.lazbuild }}" --widgetset=${{ matrix.config.build-widgetset }}
+
+    - name: Build samples
+      run: |
+        "${{ matrix.config.lazbuild }}" --widgetset=${{ matrix.config.build-widgetset }} \
+          "${{ env.COMPS_SOURCE }}/samples/TButtonedEdit/tbuttonededit.lpi"
+        "${{ matrix.config.lazbuild }}" --widgetset=${{ matrix.config.build-widgetset }} \
+          "${{ env.COMPS_SOURCE }}/samples/THotkeyManager/THotkeyManager.lpi"
+
+    - name: Upload sample artifacts
+      if: always()
+      uses: actions/upload-artifact@v4.6.2
+      with:
+        name: samples-${{ matrix.config.build-widgetset }}
+        if-no-files-found: warn
+        path: |
+          ${{ env.COMPS_SOURCE }}/samples/TButtonedEdit/TButtonedEdit.exe
+          ${{ env.COMPS_SOURCE }}/samples/THotkeyManager/THotkeyManager.exe
+          ${{ env.COMPS_SOURCE }}/samples/TButtonedEdit/TButtonedEdit
+          ${{ env.COMPS_SOURCE }}/samples/THotkeyManager/THotkeyManager
