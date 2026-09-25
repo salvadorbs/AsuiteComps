@@ -146,12 +146,7 @@ type
     procedure DoEditTextContextPopup(Sender: TObject; MousePos: TPoint;
       var Handled: Boolean);
     procedure DoEditTextDblClick(Sender: TObject);
-    procedure DoEditTextEditingDone(Sender: TObject);
-    procedure DoEditTextEnter(Sender: TObject);
-    procedure DoEditTextExit(Sender: TObject);
-    procedure DoEditTextKeyDown(Sender: TObject; var Key: Word; Shift: TShiftState);
     procedure DoEditTextKeyPress(Sender: TObject; var Key: Char);
-    procedure DoEditTextKeyUp(Sender: TObject; var Key: Word; Shift: TShiftState);
     procedure DoEditTextMouseDown(Sender: TObject; Button: TMouseButton;
       Shift: TShiftState; X, Y: Integer);
     procedure DoEditTextMouseMove(Sender: TObject; Shift: TShiftState; X, Y: Integer);
@@ -196,6 +191,11 @@ type
     procedure CalculatePreferredSize(var PreferredWidth, PreferredHeight: Integer;
       WithThemeSpace: Boolean); override;
     procedure ChangeScale(Multiplier, Divider: Integer); override;
+    procedure DoEditTextEnter(Sender: TObject); virtual;
+    procedure DoEditTextExit(Sender: TObject); virtual;
+    procedure DoEditTextEditingDone(Sender: TObject); virtual;
+    procedure DoEditTextKeyDown(Sender: TObject; var Key: Word; Shift: TShiftState); virtual;
+    procedure DoEditTextKeyUp(Sender: TObject; var Key: Word; Shift: TShiftState); virtual;
     class function GetControlClassDefaultSize: TSize; override;
     procedure Loaded; override;
     procedure MouseEnter; override;
@@ -260,7 +260,6 @@ type
     property BiDiMode;
     property BorderColor;
     property BorderSpacing;
-    property BorderStyle default bsNone;
     property CharCase;
     property Color;
     property Constraints;
