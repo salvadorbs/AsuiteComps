@@ -80,14 +80,19 @@ type
 
     property Align;
     property Anchors;
+    property AutoSize;
+    property AutoSizeHeightIsEditHeight;
     property BiDiMode;
+    property BorderColor;
     property BorderSpacing;
-    property BorderStyle default bsSingle;
+    property BorderStyle default bsNone;
     property CharCase;
     property Color;
     property Constraints;
     property Enabled;
+    property FocusColor;
     property Font;
+    property HoverColor;
     property LeftButton;
     property ParentBiDiMode;
     property ParentFont;

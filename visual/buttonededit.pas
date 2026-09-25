@@ -24,8 +24,8 @@ unit ButtonedEdit;
 interface
 
 uses
-  Classes, SysUtils, StdCtrls, BCImageButton, Buttons, Controls, ImgList, LCLIntf,
-  {$IFDEF Windows}Windows,{$ENDIF} LCLProc, Graphics, Menus, LCLType, Types;
+  Classes, SysUtils, StdCtrls, Buttons, Controls, ImgList, Graphics, Menus,
+  LCLType, Types;
 
 type
   TButtonPosition = (bpLeft, bpRight);
@@ -37,10 +37,15 @@ type
   TCustomGlyphButton = class(TCustomSpeedButton)
   private
     FDropDownMenu: TPopupMenu;
+
+    procedure SetDropDownMenu(AValue: TPopupMenu);
   public
-    property DropDownMenu: TPopupMenu read FDropDownMenu write FDropDownMenu;
+    property DropDownMenu: TPopupMenu read FDropDownMenu write SetDropDownMenu;
 
     procedure Click; override;
+  protected
+    procedure Notification(AComponent: TComponent; Operation: TOperation); override;
+    procedure PaintBackground(var PaintRect: TRect); override;
   end;
 
   { TCustomGlyphButtonOptions }
@@ -50,24 +55,33 @@ type
     FButton: TCustomGlyphButton;
     FParentControl: TCustomButtonedEdit;
 
+    function GetDisabledImageIndex: TImageIndex;
     function GetDropDownMenu: TPopupMenu;
+    function GetHotImageIndex: TImageIndex;
     function GetImageIndex: TImageIndex;
     function GetImages: TCustomImageList;
     function GetImagesWidth: Integer;
     function GetOnClick: TNotifyEvent;
+    function GetPressedImageIndex: TImageIndex;
     function GetVisible: Boolean;
+    procedure SetDisabledImageIndex(AValue: TImageIndex);
     procedure SetDropDownMenu(AValue: TPopupMenu);
+    procedure SetHotImageIndex(AValue: TImageIndex);
     procedure SetImageIndex(AValue: TImageIndex);
     procedure SetImages(AValue: TCustomImageList);
     procedure SetImagesWidth(AValue: Integer);
     procedure SetOnClick(AValue: TNotifyEvent);
-    procedure SetVisibile(AValue: Boolean);
+    procedure SetPressedImageIndex(AValue: TImageIndex);
+    procedure SetVisible(AValue: Boolean);
   public                                       
+    property DisabledImageIndex: TImageIndex read GetDisabledImageIndex write SetDisabledImageIndex default -1;
     property DropDownMenu: TPopupMenu read GetDropDownMenu write SetDropDownMenu;
+    property HotImageIndex: TImageIndex read GetHotImageIndex write SetHotImageIndex default -1;
     property Images: TCustomImageList read GetImages write SetImages;
     property ImagesWidth: Integer read GetImagesWidth write SetImagesWidth default 0;
     property ImageIndex: TImageIndex read GetImageIndex write SetImageIndex default -1;  
-    property Visible: Boolean read GetVisible write SetVisibile default False;
+    property PressedImageIndex: TImageIndex read GetPressedImageIndex write SetPressedImageIndex default -1;
+    property Visible: Boolean read GetVisible write SetVisible default False;
 
     //Events
     property OnClick: TNotifyEvent read GetOnClick write SetOnClick;
@@ -75,7 +89,9 @@ type
     constructor Create(AOwner: TCustomButtonedEdit; APosition: TButtonPosition);
 
     procedure UpdateSize;
+    procedure SetOuterSpacing(ASize: Integer);
     procedure Invalidate;
+    procedure Clear;
     procedure Assign(ASource: TPersistent); override;
   end;
 
@@ -83,10 +99,13 @@ type
 
   TGlyphButtonOptions = class(TCustomGlyphButtonOptions)
   published
+    property DisabledImageIndex;
     property DropDownMenu;
+    property HotImageIndex;
     property Images;
     property ImagesWidth;
     property ImageIndex;
+    property PressedImageIndex;
     property Visible;
   end;
 
@@ -96,47 +115,93 @@ type
   private
     FLeftButton: TGlyphButtonOptions;
     FEditText: TEdit;
+    FBorderColor: TColor;
+    FFocusColor: TColor;
+    FHoverColor: TColor;
+    FAutoSizeHeightIsEditHeight: Boolean;
+    FFocusOnButtonClick: Boolean;
+    FOnEditContextPopup: TContextPopupEvent;
+    FOnEditDblClick: TNotifyEvent;
+    FOnEditEditingDone: TNotifyEvent;
+    FOnEditKeyDown: TKeyEvent;
+    FOnEditKeyUp: TKeyEvent;
+    FOnEditMouseDown: TMouseEvent;
+    FOnEditMouseMove: TMouseMoveEvent;
+    FOnEditMouseUp: TMouseEvent;
     FOnEditTextChange: TNotifyEvent;
     FOnEditTextClick: TNotifyEvent;
     FOnEditTextKeyPress: TKeyPressEvent;
+    FOnEditTextMouseEnter: TNotifyEvent;
+    FOnEditTextMouseLeave: TNotifyEvent;
+    FOnEditUtf8KeyPress: TUTF8KeyPressEvent;
+    FOnLeftButtonClick: TNotifyEvent;
+    FOnRightButtonClick: TNotifyEvent;
+    FMouseInControl: Boolean;
     FRightButton: TGlyphButtonOptions;
 
+    procedure DoChildMouseEnter(Sender: TObject);
+    procedure DoChildMouseLeave(Sender: TObject);
     procedure DoEditTextChange(Sender: TObject);
     procedure DoEditTextClick(Sender: TObject);
-    procedure DoEditTextKeyPress(Sender: TObject; var Key: Char);
+    procedure DoEditTextContextPopup(Sender: TObject; MousePos: TPoint;
+      var Handled: Boolean);
+    procedure DoEditTextDblClick(Sender: TObject);
+    procedure DoEditTextEditingDone(Sender: TObject);
     procedure DoEditTextEnter(Sender: TObject);
     procedure DoEditTextExit(Sender: TObject);
+    procedure DoEditTextKeyDown(Sender: TObject; var Key: Word; Shift: TShiftState);
+    procedure DoEditTextKeyPress(Sender: TObject; var Key: Char);
+    procedure DoEditTextKeyUp(Sender: TObject; var Key: Word; Shift: TShiftState);
+    procedure DoEditTextMouseDown(Sender: TObject; Button: TMouseButton;
+      Shift: TShiftState; X, Y: Integer);
+    procedure DoEditTextMouseMove(Sender: TObject; Shift: TShiftState; X, Y: Integer);
+    procedure DoEditTextMouseUp(Sender: TObject; Button: TMouseButton;
+      Shift: TShiftState; X, Y: Integer);
+    procedure DoEditTextUtf8KeyPress(Sender: TObject; var UTF8Key: TUTF8Char);
+    procedure DoLeftButtonClick(Sender: TObject);
+    procedure DoRightButtonClick(Sender: TObject);
+    procedure DrawHighlightFrame(AColor: TColor);
+    function CurrentRingSize: Integer;
+    function CurrentGapSize: Integer;
+    procedure UpdateSpacing;
+    function MouseIsOverComposite: Boolean;
+    procedure SetHovered(AValue: Boolean);
+    procedure UpdateHoverState;
     function GetAlignment: TAlignment;
     function GetCharCase: TEditCharCase;
-    function GetFont: TFont;
     function GetMaxLength: Integer;
-    function GetOnKeyPress: TKeyPressEvent;
-    function GetOnLeftButtonClick: TNotifyEvent;
-    function GetOnRightButtonClick: TNotifyEvent;
-    function GetParentFont: Boolean;
     function GetPasswordChar: Char;
     function GetReadOnly: Boolean;
+    function GetTabStop: Boolean;
     function GetText: TCaption;
     function GetTextHint: TTranslateString;
     procedure SetAlignment(AValue: TAlignment);
+    procedure SetAutoSizeHeightIsEditHeight(AValue: Boolean);
+    procedure SetBorderColor(AValue: TColor);
     procedure SetCharCase(AValue: TEditCharCase);
-    procedure SetFont(AValue: TFont);
+    procedure SetFocusColor(AValue: TColor);
+    procedure SetHoverColor(AValue: TColor);
     procedure SetLeftButton(AValue: TGlyphButtonOptions);
     procedure SetMaxLength(AValue: Integer);
-    procedure SetOnKeyPress(AValue: TKeyPressEvent);
-    procedure SetOnLeftButtonClick(AValue: TNotifyEvent);
-    procedure SetOnRightButtonClick(AValue: TNotifyEvent);
-    procedure SetParentFont(AValue: Boolean);
     procedure SetPasswordChar(AValue: Char);
     procedure SetReadOnly(AValue: Boolean);
     procedure SetRightButton(AValue: TGlyphButtonOptions);
+    procedure SetTabStop(AValue: Boolean);
     procedure SetText(AValue: TCaption);
     procedure SetTextHint(AValue: TTranslateString);
 
     procedure UpdateSize;
-  protected     
-    class function GetControlClassDefaultSize: TSize; override;  
-    procedure Notification(AComponent: TComponent; Operation: TOperation); override;
+  protected
+    procedure AdjustClientRect(var ARect: TRect); override;
+    procedure CalculatePreferredSize(var PreferredWidth, PreferredHeight: Integer;
+      WithThemeSpace: Boolean); override;
+    procedure ChangeScale(Multiplier, Divider: Integer); override;
+    class function GetControlClassDefaultSize: TSize; override;
+    procedure Loaded; override;
+    procedure MouseEnter; override;
+    procedure MouseLeave; override;
+    procedure Paint; override;
+    procedure SetAutoSize(AValue: Boolean); override;
   public
     constructor Create(AOwner: TComponent); override;
     destructor Destroy; override;
@@ -145,23 +210,38 @@ type
     function Focused: Boolean; override;
 
     property Alignment: TAlignment read GetAlignment write SetAlignment default taLeftJustify;
+    property AutoSizeHeightIsEditHeight: Boolean read FAutoSizeHeightIsEditHeight write SetAutoSizeHeightIsEditHeight default True;
+    property BorderColor: TColor read FBorderColor write SetBorderColor default clWindowFrame;
     property CharCase: TEditCharCase read GetCharCase write SetCharCase default ecNormal;
-    property Font: TFont read GetFont write SetFont;
+    property FocusColor: TColor read FFocusColor write SetFocusColor default clHighlight;
+    property FocusOnButtonClick: Boolean read FFocusOnButtonClick write FFocusOnButtonClick default False;
+    property HoverColor: TColor read FHoverColor write SetHoverColor default clHighlight;
     property LeftButton: TGlyphButtonOptions read FLeftButton write SetLeftButton;
     property MaxLength: Integer read GetMaxLength write SetMaxLength default 0;
-    property ParentFont: Boolean read GetParentFont write SetParentFont;
     property PasswordChar: Char read GetPasswordChar write SetPasswordChar default #0;
     property RightButton: TGlyphButtonOptions read FRightButton write SetRightButton;
     property ReadOnly: Boolean read GetReadOnly write SetReadOnly default False;
+    property TabStop: Boolean read GetTabStop write SetTabStop default True;
     property Text: TCaption read GetText write SetText;
     property TextHint: TTranslateString read GetTextHint write SetTextHint;
 
     //Events
     property OnChange: TNotifyEvent read FOnEditTextChange write FOnEditTextChange;
     property OnClick: TNotifyEvent read FOnEditTextClick write FOnEditTextClick;
-    property OnLeftButtonClick: TNotifyEvent read GetOnLeftButtonClick write SetOnLeftButtonClick;
-    property OnRightButtonClick: TNotifyEvent read GetOnRightButtonClick write SetOnRightButtonClick;
+    property OnContextPopup: TContextPopupEvent read FOnEditContextPopup write FOnEditContextPopup;
+    property OnDblClick: TNotifyEvent read FOnEditDblClick write FOnEditDblClick;
+    property OnEditingDone: TNotifyEvent read FOnEditEditingDone write FOnEditEditingDone;
+    property OnKeyDown: TKeyEvent read FOnEditKeyDown write FOnEditKeyDown;
     property OnKeyPress: TKeyPressEvent read FOnEditTextKeyPress write FOnEditTextKeyPress;
+    property OnKeyUp: TKeyEvent read FOnEditKeyUp write FOnEditKeyUp;
+    property OnLeftButtonClick: TNotifyEvent read FOnLeftButtonClick write FOnLeftButtonClick;
+    property OnMouseDown: TMouseEvent read FOnEditMouseDown write FOnEditMouseDown;
+    property OnMouseEnter: TNotifyEvent read FOnEditTextMouseEnter write FOnEditTextMouseEnter;
+    property OnMouseLeave: TNotifyEvent read FOnEditTextMouseLeave write FOnEditTextMouseLeave;
+    property OnMouseMove: TMouseMoveEvent read FOnEditMouseMove write FOnEditMouseMove;
+    property OnMouseUp: TMouseEvent read FOnEditMouseUp write FOnEditMouseUp;
+    property OnRightButtonClick: TNotifyEvent read FOnRightButtonClick write FOnRightButtonClick;
+    property OnUTF8KeyPress: TUTF8KeyPressEvent read FOnEditUtf8KeyPress write FOnEditUtf8KeyPress;
   published
   end;
 
@@ -175,15 +255,20 @@ type
     property Align;
     property Alignment;
     property Anchors;
-//    property AutoSize;
+    property AutoSize;
+    property AutoSizeHeightIsEditHeight;
     property BiDiMode;
+    property BorderColor;
     property BorderSpacing;
-    property BorderStyle default bsSingle;
+    property BorderStyle default bsNone;
     property CharCase;
     property Color;
     property Constraints;
     property Enabled;
+    property FocusColor;
+    property FocusOnButtonClick;
     property Font;
+    property HoverColor;
     property LeftButton;
     property MaxLength;
     property ParentBiDiMode;
@@ -202,11 +287,22 @@ type
     //Events
     property OnChange;
     property OnClick;
+    property OnContextPopup;
+    property OnDblClick;
+    property OnEditingDone;
     property OnEnter;
     property OnExit;
-    property OnLeftButtonClick;
-    property OnRightButtonClick;
+    property OnKeyDown;
     property OnKeyPress;
+    property OnKeyUp;
+    property OnLeftButtonClick;
+    property OnMouseDown;
+    property OnMouseEnter;
+    property OnMouseLeave;
+    property OnMouseMove;
+    property OnMouseUp;
+    property OnRightButtonClick;
+    property OnUTF8KeyPress;
   end;
 
 procedure Register;
@@ -235,9 +331,34 @@ begin
   end;
 end;
 
+procedure TCustomGlyphButton.PaintBackground(var PaintRect: TRect);
+begin
+  //Draw only the glyph: no themed button background/border on hover/press.
+  //The composite draws the simulated frame itself.
+end;
+
+procedure TCustomGlyphButton.SetDropDownMenu(AValue: TPopupMenu);
+begin
+  if FDropDownMenu = AValue then
+    Exit;
+  if FDropDownMenu <> nil then
+    FDropDownMenu.RemoveFreeNotification(Self);
+  FDropDownMenu := AValue;
+  if FDropDownMenu <> nil then
+    FDropDownMenu.FreeNotification(Self);
+end;
+
+procedure TCustomGlyphButton.Notification(AComponent: TComponent;
+  Operation: TOperation);
+begin
+  inherited Notification(AComponent, Operation);
+  if (Operation = opRemove) and (AComponent = FDropDownMenu) then
+    FDropDownMenu := nil;
+end;
+
 { TCustomGlyphButtonOptions }
 
-procedure TCustomGlyphButtonOptions.SetVisibile(AValue: Boolean);
+procedure TCustomGlyphButtonOptions.SetVisible(AValue: Boolean);
 begin
   if AValue <> (FButton.Visible) then
   begin
@@ -252,6 +373,7 @@ begin
   begin
     FButton.Images := AValue;
     UpdateSize;
+    Invalidate;
   end;
 end;
 
@@ -261,6 +383,33 @@ begin
   begin
     FButton.ImageWidth := AValue;
     UpdateSize;
+    Invalidate;
+  end;
+end;
+
+procedure TCustomGlyphButtonOptions.SetDisabledImageIndex(AValue: TImageIndex);
+begin
+  if FButton.DisabledImageIndex <> AValue then
+  begin
+    FButton.DisabledImageIndex := AValue;
+    Invalidate;
+  end;
+end;
+
+procedure TCustomGlyphButtonOptions.SetHotImageIndex(AValue: TImageIndex);
+begin
+  if FButton.HotImageIndex <> AValue then
+  begin
+    FButton.HotImageIndex := AValue;
+    Invalidate;
+  end;
+end;
+
+procedure TCustomGlyphButtonOptions.SetPressedImageIndex(AValue: TImageIndex);
+begin
+  if FButton.PressedImageIndex <> AValue then
+  begin
+    FButton.PressedImageIndex := AValue;
     Invalidate;
   end;
 end;
@@ -279,6 +428,21 @@ procedure TCustomGlyphButtonOptions.SetDropDownMenu(AValue: TPopupMenu);
 begin
   if FButton.DropDownMenu <> AValue then
     FButton.DropDownMenu := AValue;
+end;
+
+function TCustomGlyphButtonOptions.GetDisabledImageIndex: TImageIndex;
+begin
+  Result := FButton.DisabledImageIndex;
+end;
+
+function TCustomGlyphButtonOptions.GetHotImageIndex: TImageIndex;
+begin
+  Result := FButton.HotImageIndex;
+end;
+
+function TCustomGlyphButtonOptions.GetPressedImageIndex: TImageIndex;
+begin
+  Result := FButton.PressedImageIndex;
 end;
 
 function TCustomGlyphButtonOptions.GetImageIndex: TImageIndex;
@@ -312,6 +476,7 @@ begin
   begin
     FButton.ImageIndex := AValue;
     UpdateSize;
+    Invalidate;
   end;
 end;
 
@@ -333,36 +498,62 @@ begin
       FButton.Name:= 'RightButton';
     end;
   end;
-  FButton.AutoSize := True;
+  FButton.AutoSize := False;
   FButton.Flat := True;
   FButton.Parent := TWinControl(FParentControl);
   FButton.Visible := False;
 
-  //Workaround to compensate for incorrect button position (vertical center)
-  FButton.BorderSpacing.Top := 1;
+  //Let the composite track hovering across the edit and both buttons.
+  FButton.OnMouseEnter := FParentControl.DoChildMouseEnter;
+  FButton.OnMouseLeave := FParentControl.DoChildMouseLeave;
 
   UpdateSize;
 end;
 
 procedure TCustomGlyphButtonOptions.UpdateSize;
 begin
-  if ImageIndex = -1 then
-    Exit;
-  if Images <> nil then
+  if (ImageIndex >= 0) and (Images <> nil) then
   begin
-    FButton.Width  := FButton.ImageWidth;
-    FButton.Constraints.MaxHeight := Images.Height;
+    //Fixed width; the height follows the composite/edit (button is aligned).
+    FButton.Constraints.MaxHeight := 0;
+    FButton.Width := FButton.ImageWidth;
   end
   else
   begin
+    FButton.Constraints.MaxHeight := 0;
     FButton.Width := 0;
     FButton.Height := 0;
   end;
 end;
 
+procedure TCustomGlyphButtonOptions.SetOuterSpacing(ASize: Integer);
+begin
+  if ASize < 0 then
+    ASize := 0;
+  //Space between the simulated border and the button (outer side only).
+  FButton.BorderSpacing.Top := 0;
+  FButton.BorderSpacing.Bottom := 0;
+  if FButton.Align = alLeft then
+    FButton.BorderSpacing.Left := ASize
+  else if FButton.Align = alRight then
+    FButton.BorderSpacing.Right := ASize;
+end;
+
 procedure TCustomGlyphButtonOptions.Invalidate;
 begin
   FButton.Invalidate;
+end;
+
+procedure TCustomGlyphButtonOptions.Clear;
+begin
+  Images := nil;
+  ImagesWidth := 0;
+  ImageIndex := -1;
+  HotImageIndex := -1;
+  PressedImageIndex := -1;
+  DisabledImageIndex := -1;
+  Visible := False;
+  DropDownMenu := nil;
 end;
 
 procedure TCustomGlyphButtonOptions.Assign(ASource: TPersistent);
@@ -372,6 +563,9 @@ begin
     Images := TCustomGlyphButtonOptions(ASource).Images;
     ImagesWidth := TCustomGlyphButtonOptions(ASource).ImagesWidth;
     ImageIndex := TCustomGlyphButtonOptions(ASource).ImageIndex;
+    HotImageIndex := TCustomGlyphButtonOptions(ASource).HotImageIndex;
+    PressedImageIndex := TCustomGlyphButtonOptions(ASource).PressedImageIndex;
+    DisabledImageIndex := TCustomGlyphButtonOptions(ASource).DisabledImageIndex;
     Visible := TCustomGlyphButtonOptions(ASource).Visible;
     DropDownMenu := TCustomGlyphButtonOptions(ASource).DropDownMenu;
   end
@@ -381,21 +575,14 @@ end;
 
 { TCustomButtonedEdit }
 
-function TCustomButtonedEdit.GetOnRightButtonClick: TNotifyEvent;
-begin
-  Result := nil;
-  if Assigned(FRightButton) then
-    Result := FRightButton.OnClick;
-end;
-
-function TCustomButtonedEdit.GetParentFont: Boolean;
-begin
-  Result := FEditText.ParentFont;
-end;
-
 function TCustomButtonedEdit.GetReadOnly: Boolean;
 begin
   Result := FEditText.ReadOnly;
+end;
+
+function TCustomButtonedEdit.GetTabStop: Boolean;
+begin
+  Result := FEditText.TabStop;
 end;
 
 function TCustomButtonedEdit.GetText: TCaption;
@@ -414,16 +601,47 @@ begin
     FEditText.Alignment := AValue;
 end;
 
+procedure TCustomButtonedEdit.SetAutoSizeHeightIsEditHeight(AValue: Boolean);
+begin
+  if FAutoSizeHeightIsEditHeight <> AValue then
+  begin
+    FAutoSizeHeightIsEditHeight := AValue;
+    if AutoSize then
+      AdjustSize;
+  end;
+end;
+
+procedure TCustomButtonedEdit.SetBorderColor(AValue: TColor);
+begin
+  if FBorderColor <> AValue then
+  begin
+    FBorderColor := AValue;
+    Invalidate;
+  end;
+end;
+
+procedure TCustomButtonedEdit.SetFocusColor(AValue: TColor);
+begin
+  if FFocusColor <> AValue then
+  begin
+    FFocusColor := AValue;
+    Invalidate;
+  end;
+end;
+
+procedure TCustomButtonedEdit.SetHoverColor(AValue: TColor);
+begin
+  if FHoverColor <> AValue then
+  begin
+    FHoverColor := AValue;
+    Invalidate;
+  end;
+end;
+
 procedure TCustomButtonedEdit.SetCharCase(AValue: TEditCharCase);
 begin
   if FEditText.CharCase <> AValue then
     FEditText.CharCase := AValue;
-end;
-
-procedure TCustomButtonedEdit.SetFont(AValue: TFont);
-begin
-  if (AValue <> nil) and (not FEditText.Font.IsEqual(AValue)) then
-    FEditText.Font.Assign(AValue);
 end;
 
 procedure TCustomButtonedEdit.SetMaxLength(AValue: Integer);
@@ -436,13 +654,6 @@ procedure TCustomButtonedEdit.SetPasswordChar(AValue: Char);
 begin
   if FEditText.PasswordChar <> AValue then
     FEditText.PasswordChar := AValue;
-end;
-
-function TCustomButtonedEdit.GetOnLeftButtonClick: TNotifyEvent;
-begin
-  Result := nil;
-  if Assigned(FLeftButton) then
-    Result := FLeftButton.OnClick;
 end;
 
 procedure TCustomButtonedEdit.DoEditTextChange(Sender: TObject);
@@ -465,14 +676,143 @@ end;
 
 procedure TCustomButtonedEdit.DoEditTextEnter(Sender: TObject);
 begin
+  Invalidate;
   if Assigned(OnEnter) then
     OnEnter(Self);
 end;
 
 procedure TCustomButtonedEdit.DoEditTextExit(Sender: TObject);
 begin
+  Invalidate;
   if Assigned(OnExit) then
     OnExit(Self);
+end;
+
+procedure TCustomButtonedEdit.DoEditTextContextPopup(Sender: TObject;
+  MousePos: TPoint; var Handled: Boolean);
+begin
+  if Assigned(FOnEditContextPopup) then
+    FOnEditContextPopup(Self, MousePos, Handled);
+end;
+
+procedure TCustomButtonedEdit.DoEditTextDblClick(Sender: TObject);
+begin
+  if Assigned(FOnEditDblClick) then
+    FOnEditDblClick(Self);
+end;
+
+procedure TCustomButtonedEdit.DoEditTextEditingDone(Sender: TObject);
+begin
+  if Assigned(FOnEditEditingDone) then
+    FOnEditEditingDone(Self);
+end;
+
+procedure TCustomButtonedEdit.DoEditTextKeyDown(Sender: TObject; var Key: Word;
+  Shift: TShiftState);
+begin
+  if Assigned(FOnEditKeyDown) then
+    FOnEditKeyDown(Self, Key, Shift);
+end;
+
+procedure TCustomButtonedEdit.DoEditTextKeyUp(Sender: TObject; var Key: Word;
+  Shift: TShiftState);
+begin
+  if Assigned(FOnEditKeyUp) then
+    FOnEditKeyUp(Self, Key, Shift);
+end;
+
+procedure TCustomButtonedEdit.DoEditTextMouseDown(Sender: TObject;
+  Button: TMouseButton; Shift: TShiftState; X, Y: Integer);
+begin
+  if Assigned(FOnEditMouseDown) then
+    FOnEditMouseDown(Self, Button, Shift, X, Y);
+end;
+
+procedure TCustomButtonedEdit.DoEditTextMouseMove(Sender: TObject;
+  Shift: TShiftState; X, Y: Integer);
+begin
+  if Assigned(FOnEditMouseMove) then
+    FOnEditMouseMove(Self, Shift, X, Y);
+end;
+
+procedure TCustomButtonedEdit.DoEditTextMouseUp(Sender: TObject;
+  Button: TMouseButton; Shift: TShiftState; X, Y: Integer);
+begin
+  if Assigned(FOnEditMouseUp) then
+    FOnEditMouseUp(Self, Button, Shift, X, Y);
+end;
+
+procedure TCustomButtonedEdit.DoEditTextUtf8KeyPress(Sender: TObject;
+  var UTF8Key: TUTF8Char);
+begin
+  if Assigned(FOnEditUtf8KeyPress) then
+    FOnEditUtf8KeyPress(Self, UTF8Key);
+end;
+
+procedure TCustomButtonedEdit.DoLeftButtonClick(Sender: TObject);
+begin
+  if FFocusOnButtonClick then
+    SetFocus;
+  if Assigned(FOnLeftButtonClick) then
+    FOnLeftButtonClick(Self);
+end;
+
+procedure TCustomButtonedEdit.DoRightButtonClick(Sender: TObject);
+begin
+  if FFocusOnButtonClick then
+    SetFocus;
+  if Assigned(FOnRightButtonClick) then
+    FOnRightButtonClick(Self);
+end;
+
+procedure TCustomButtonedEdit.DoChildMouseEnter(Sender: TObject);
+begin
+  //Entering any child (edit or glyph button) means the mouse is on the composite.
+  SetHovered(True);
+end;
+
+procedure TCustomButtonedEdit.DoChildMouseLeave(Sender: TObject);
+begin
+  //The pointer may just have moved to a sibling (edit <-> buttons) or to the
+  //border, so only report the leave once it is really outside the composite.
+  UpdateHoverState;
+end;
+
+function TCustomButtonedEdit.MouseIsOverComposite: Boolean;
+var
+  R: TRect;
+begin
+  //Without a handle there is no real hover; treat as outside. This also keeps
+  //the logic usable in headless tests.
+  if not HandleAllocated then
+    Exit(False);
+
+  R := Rect(0, 0, Width, Height);
+  R.TopLeft := ClientToScreen(R.TopLeft);
+  R.BottomRight := ClientToScreen(R.BottomRight);
+  Result := PtInRect(R, Mouse.CursorPos);
+end;
+
+procedure TCustomButtonedEdit.SetHovered(AValue: Boolean);
+begin
+  if AValue = FMouseInControl then
+    Exit;
+
+  FMouseInControl := AValue;
+  Invalidate;
+  if AValue then
+  begin
+    if Assigned(FOnEditTextMouseEnter) then
+      FOnEditTextMouseEnter(Self);
+  end
+  else
+  if Assigned(FOnEditTextMouseLeave) then
+    FOnEditTextMouseLeave(Self);
+end;
+
+procedure TCustomButtonedEdit.UpdateHoverState;
+begin
+  SetHovered(MouseIsOverComposite);
 end;
 
 function TCustomButtonedEdit.GetAlignment: TAlignment;
@@ -495,41 +835,12 @@ begin
   Result := FEditText.PasswordChar;
 end;
 
-function TCustomButtonedEdit.GetFont: TFont;
-begin
-  Result := FEditText.Font;
-end;
-
-function TCustomButtonedEdit.GetOnKeyPress: TKeyPressEvent;
-begin
-  Result := FEditText.OnKeyPress;
-end;
-
 procedure TCustomButtonedEdit.SetLeftButton(AValue: TGlyphButtonOptions);
 begin
-  if (AValue <> nil) and (AValue <> FLeftButton) then
+  if AValue = nil then
+    FLeftButton.Clear
+  else if AValue <> FLeftButton then
     FLeftButton.Assign(AValue);
-end;
-
-procedure TCustomButtonedEdit.SetOnKeyPress(AValue: TKeyPressEvent);
-begin
-  FEditText.OnKeyPress := AValue;
-end;
-
-procedure TCustomButtonedEdit.SetOnLeftButtonClick(AValue: TNotifyEvent);
-begin
-  FLeftButton.OnClick := AValue;
-end;
-
-procedure TCustomButtonedEdit.SetOnRightButtonClick(AValue: TNotifyEvent);
-begin
-  FRightButton.OnClick := AValue;
-end;
-
-procedure TCustomButtonedEdit.SetParentFont(AValue: Boolean);
-begin
-  if FEditText.ParentFont <> AValue then
-    FEditText.ParentFont := AValue;
 end;
 
 procedure TCustomButtonedEdit.SetReadOnly(AValue: Boolean);
@@ -538,9 +849,17 @@ begin
     FEditText.ReadOnly := AValue;
 end;
 
+procedure TCustomButtonedEdit.SetTabStop(AValue: Boolean);
+begin
+  if FEditText.TabStop <> AValue then
+    FEditText.TabStop := AValue;
+end;
+
 procedure TCustomButtonedEdit.SetRightButton(AValue: TGlyphButtonOptions);
 begin
-  if (AValue <> nil) and (AValue <> FRightButton) then
+  if AValue = nil then
+    FRightButton.Clear
+  else if AValue <> FRightButton then
     FRightButton.Assign(AValue);
 end;
 
@@ -561,53 +880,192 @@ begin
   FRightButton.UpdateSize;
 end;
 
-class function TCustomButtonedEdit.GetControlClassDefaultSize: TSize;
+function TCustomButtonedEdit.CurrentRingSize: Integer;
+var
+  PPI: Integer;
 begin
-  Result := inherited GetControlClassDefaultSize;
+  PPI := Font.PixelsPerInch;
+  if PPI <= 0 then
+    PPI := 96;
+  //Round(PPI / 96), minimum 1px.
+  Result := (PPI + 48) div 96;
+  if Result < 1 then
+    Result := 1;
 end;
 
-procedure TCustomButtonedEdit.Notification(AComponent: TComponent;
-  Operation: TOperation);
+function TCustomButtonedEdit.CurrentGapSize: Integer;
+var
+  PPI: Integer;
 begin
-  inherited Notification(AComponent, Operation);
-  if (AComponent = FEditText) and (Operation = opRemove) then
-    FEditText := nil;
+  PPI := Font.PixelsPerInch;
+  if PPI <= 0 then
+    PPI := 96;
+  //~3px at 96 DPI, scaled.
+  Result := (3 * PPI + 48) div 96;
+  if Result < 1 then
+    Result := 1;
+end;
+
+procedure TCustomButtonedEdit.UpdateSpacing;
+begin
+  if FLeftButton <> nil then
+    FLeftButton.SetOuterSpacing(CurrentGapSize);
+  if FRightButton <> nil then
+    FRightButton.SetOuterSpacing(CurrentGapSize);
+  InvalidateClientRectCache(True);
+  RequestAlign;
+  Invalidate;
+end;
+
+procedure TCustomButtonedEdit.ChangeScale(Multiplier, Divider: Integer);
+begin
+  inherited ChangeScale(Multiplier, Divider);
+  UpdateSpacing;
+end;
+
+procedure TCustomButtonedEdit.AdjustClientRect(var ARect: TRect);
+begin
+  inherited AdjustClientRect(ARect);
+  InflateRect(ARect, -CurrentRingSize, -CurrentRingSize);
+end;
+
+procedure TCustomButtonedEdit.MouseEnter;
+begin
+  inherited MouseEnter;
+  SetHovered(True);
+end;
+
+procedure TCustomButtonedEdit.MouseLeave;
+begin
+  inherited MouseLeave;
+  UpdateHoverState;
+end;
+
+procedure TCustomButtonedEdit.Paint;
+begin
+  inherited Paint;
+
+  //Simulated frame drawn by the composite; the inner edit's native border is hidden.
+  if (FEditText <> nil) and FEditText.Focused and (FFocusColor <> clNone) then
+    DrawHighlightFrame(FFocusColor)
+  else if FMouseInControl and (FHoverColor <> clNone) then
+    DrawHighlightFrame(FHoverColor)
+  else
+    DrawHighlightFrame(FBorderColor);
+end;
+
+procedure TCustomButtonedEdit.DrawHighlightFrame(AColor: TColor);
+begin
+  if AColor = clNone then
+    Exit;
+  Canvas.Brush.Style := bsSolid;
+  Canvas.Brush.Color := AColor;
+  Canvas.FrameRect(ClientRect);
+end;
+
+procedure TCustomButtonedEdit.CalculatePreferredSize(var PreferredWidth,
+  PreferredHeight: Integer; WithThemeSpace: Boolean);
+var
+  EditPreferredHeight: Integer;
+begin
+  EditPreferredHeight := 0;
+  inherited CalculatePreferredSize(PreferredWidth, PreferredHeight, WithThemeSpace);
+  if FEditText <> nil then
+  begin
+    //Measure with the native border so the height matches a TEdit, while the
+    //edit itself stays visually borderless (we draw the frame ourselves).
+    //Changing BorderStyle only updates the widget frame, it does not recreate
+    //the handle.
+    FEditText.BorderStyle := bsSingle;
+    FEditText.InvalidatePreferredSize;
+    FEditText.GetPreferredSize(PreferredWidth, EditPreferredHeight, False, WithThemeSpace);
+    FEditText.BorderStyle := bsNone;
+    if FAutoSizeHeightIsEditHeight then
+      //Native TEdit height + the ring reserved for the simulated frame.
+      PreferredHeight := EditPreferredHeight + 2 * CurrentRingSize;
+  end;
+  //Width is user-defined, not auto-sized (like LCL's grouped edit).
+  PreferredWidth := 0;
+end;
+
+procedure TCustomButtonedEdit.Loaded;
+begin
+  inherited Loaded;
+  //LCL does not reapply AutoSize after loading, so the LFM height would stick.
+  if AutoSize then
+    AdjustSize;
+end;
+
+class function TCustomButtonedEdit.GetControlClassDefaultSize: TSize;
+begin
+  //Like LCL's grouped edit: as TCustomEdit + one button.
+  Result.CX := 80 + 23;
+  Result.CY := 23;
+end;
+
+procedure TCustomButtonedEdit.SetAutoSize(AValue: Boolean);
+begin
+  if AutoSize = AValue then
+    Exit;
+  inherited SetAutoSize(AValue);
+  if FEditText <> nil then
+    FEditText.AutoSize := AValue;
 end;
 
 constructor TCustomButtonedEdit.Create(AOwner: TComponent);
 begin
   inherited Create(AOwner);
 
+  FAutoSizeHeightIsEditHeight := True;
+  FBorderColor := clWindowFrame;
+  FFocusColor := clHighlight;
+  FHoverColor := clHighlight;
+
   with GetControlClassDefaultSize do
     SetInitialBounds(0, 0, CX, CY);                
   ParentColor := False;
 
-  BorderStyle := bsSingle;
+  BorderStyle := bsNone;
 
   //Buttons
   FLeftButton := TGlyphButtonOptions.Create(Self, bpLeft);
   FRightButton := TGlyphButtonOptions.Create(Self, bpRight);
+  FLeftButton.OnClick := DoLeftButtonClick;
+  FRightButton.OnClick := DoRightButtonClick;
 
   //EditBox
   FEditText:= TEdit.Create(Self);
   with FEditText do
   begin
     Align := alClient;
+    //Native border hidden: the composite draws the simulated frame.
     BorderStyle := bsNone;
-    BorderSpacing.Left := 1;
-    BorderSpacing.Right := 1;
-    BorderSpacing.Top := 1;
     Parent := Self;
     ParentColor := True;
-    ParentFont := False;
+    ParentFont := True;
     OnChange := DoEditTextChange;
     OnClick := DoEditTextClick;
+    OnContextPopup := DoEditTextContextPopup;
+    OnDblClick := DoEditTextDblClick;
+    OnEditingDone := DoEditTextEditingDone;
+    OnKeyDown := DoEditTextKeyDown;
     OnKeyPress := DoEditTextKeyPress;
+    OnKeyUp := DoEditTextKeyUp;
+    OnMouseDown := DoEditTextMouseDown;
+    OnMouseEnter := DoChildMouseEnter;
+    OnMouseLeave := DoChildMouseLeave;
+    OnMouseMove := DoEditTextMouseMove;
+    OnMouseUp := DoEditTextMouseUp;
+    OnUTF8KeyPress := DoEditTextUtf8KeyPress;
     OnEnter := DoEditTextEnter;
     OnExit := DoEditTextExit;
   end;
 
+  UpdateSpacing;
   UpdateSize;
+
+  //Anchor the height to the edit's height (like LCL's grouped edit / TEditButton).
+  AutoSize := True;
 end;
 
 destructor TCustomButtonedEdit.Destroy;
