@@ -27,14 +27,26 @@
     <RunParams>
       <FormatVersion Value="2"/>
     </RunParams>
-    <RequiredPackages Count="2">
+    <RequiredPackages Count="6">
       <Item1>
-        <PackageName Value="ASuiteComps"/>
-        <MinVersion Major="1" Valid="True"/>
+        <PackageName Value="LazControls"/>
       </Item1>
       <Item2>
-        <PackageName Value="LCL"/>
+        <PackageName Value="LazControlDsgn"/>
       </Item2>
+      <Item3>
+        <PackageName Value="jppacklcl"/>
+      </Item3>
+      <Item4>
+        <PackageName Value="bgracontrols"/>
+      </Item4>
+      <Item5>
+        <PackageName Value="ASuiteComps"/>
+        <MinVersion Major="1" Valid="True"/>
+      </Item5>
+      <Item6>
+        <PackageName Value="LCL"/>
+      </Item6>
     </RequiredPackages>
     <Units Count="2">
       <Unit0>
