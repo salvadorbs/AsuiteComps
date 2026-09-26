@@ -54,6 +54,9 @@ type
   private
     FButton: TCustomGlyphButton;
     FParentControl: TCustomButtonedEdit;
+    { True when the host explicitly set ImagesWidth; deriving the width from a
+      newly assigned image list must not override such a value. }
+    FImageWidthExplicit: Boolean;
 
     function GetDisabledImageIndex: TImageIndex;
     function GetDropDownMenu: TPopupMenu;
@@ -79,6 +82,9 @@ type
     property HotImageIndex: TImageIndex read GetHotImageIndex write SetHotImageIndex default -1;
     property Images: TCustomImageList read GetImages write SetImages;
     property ImagesWidth: Integer read GetImagesWidth write SetImagesWidth default 0;
+    { Read-only: True once the host assigned ImagesWidth. Assigning a new image
+      list clears it, so the width can be derived from the list again. }
+    property ImageWidthExplicit: Boolean read FImageWidthExplicit;
     property ImageIndex: TImageIndex read GetImageIndex write SetImageIndex default -1;  
     property PressedImageIndex: TImageIndex read GetPressedImageIndex write SetPressedImageIndex default -1;
     property Visible: Boolean read GetVisible write SetVisible default False;
@@ -90,6 +96,10 @@ type
 
     procedure UpdateSize;
     procedure SetOuterSpacing(ASize: Integer);
+    { Keeps the glyph at its native size and centers the button vertically in
+      an inner area of AParentInnerHeight pixels. The button height is pinned
+      to the glyph height so a taller composite never stretches the icon. }
+    procedure CenterVertically(AParentInnerHeight: Integer);
     procedure Invalidate;
     procedure Clear;
     procedure Assign(ASource: TPersistent); override;
@@ -139,6 +149,7 @@ type
     FMouseInControl: Boolean;
     FRightButton: TGlyphButtonOptions;
     FNativeEditHeight: Integer;
+    FUpdatingLayout: Boolean;
 
     procedure DoChildMouseEnter(Sender: TObject);
     procedure DoChildMouseLeave(Sender: TObject);
@@ -161,6 +172,9 @@ type
     function CurrentGapSize: Integer;
     function NativeEditHeight: Integer;
     procedure UpdateSpacing;
+    procedure UpdateVerticalLayout;
+    procedure UpdateEditBounds;
+    function InnerHeight: Integer;
     function MouseIsOverComposite: Boolean;
     procedure SetHovered(AValue: Boolean);
     procedure UpdateHoverState;
@@ -204,6 +218,7 @@ type
     procedure MouseEnter; override;
     procedure MouseLeave; override;
     procedure Paint; override;
+    procedure Resize; override;
     procedure SetAutoSize(AValue: Boolean); override;
   public
     constructor Create(AOwner: TComponent); override;
@@ -374,6 +389,8 @@ begin
   if FButton.Images <> AValue then
   begin
     FButton.Images := AValue;
+    // A new list: the width may be derived from it again.
+    FImageWidthExplicit := False;
     UpdateSize;
     Invalidate;
   end;
@@ -381,6 +398,10 @@ end;
 
 procedure TCustomGlyphButtonOptions.SetImagesWidth(AValue: Integer);
 begin
+  // Remember the host set the width, even when it equals the current value
+  // (e.g. it matches the embedded default). Deriving from Images must not
+  // silently override it.
+  FImageWidthExplicit := True;
   if FButton.ImageWidth <> AValue then
   begin
     FButton.ImageWidth := AValue;
@@ -487,6 +508,7 @@ constructor TCustomGlyphButtonOptions.Create(AOwner: TCustomButtonedEdit;
 begin                       
   FButton := TCustomGlyphButton.Create(AOwner);
   FParentControl := AOwner;
+  FImageWidthExplicit := False;
 
   case APosition of
     bpLeft:
@@ -515,17 +537,19 @@ end;
 procedure TCustomGlyphButtonOptions.UpdateSize;
 begin
   if (ImageIndex >= 0) and (Images <> nil) then
-  begin
-    //Fixed width; the height follows the composite/edit (button is aligned).
-    FButton.Constraints.MaxHeight := 0;
-    FButton.Width := FButton.ImageWidth;
-  end
+    //Fixed width; the height is pinned by CenterVertically to the glyph size.
+    FButton.Width := FButton.ImageWidth
   else
   begin
+    FButton.Constraints.MinHeight := 0;
     FButton.Constraints.MaxHeight := 0;
     FButton.Width := 0;
     FButton.Height := 0;
   end;
+
+  //Re-center the button now that its glyph size may have changed.
+  if FParentControl <> nil then
+    FParentControl.UpdateVerticalLayout;
 end;
 
 procedure TCustomGlyphButtonOptions.SetOuterSpacing(ASize: Integer);
@@ -533,12 +557,33 @@ begin
   if ASize < 0 then
     ASize := 0;
   //Space between the simulated border and the button (outer side only).
-  FButton.BorderSpacing.Top := 0;
-  FButton.BorderSpacing.Bottom := 0;
+  //Top/Bottom are left to CenterVertically.
   if FButton.Align = alLeft then
     FButton.BorderSpacing.Left := ASize
   else if FButton.Align = alRight then
     FButton.BorderSpacing.Right := ASize;
+end;
+
+procedure TCustomGlyphButtonOptions.CenterVertically(AParentInnerHeight: Integer);
+var
+  GlyphHeight, Extra: Integer;
+begin
+  if (ImageIndex >= 0) and (Images <> nil) then
+    GlyphHeight := Images.Height
+  else
+    GlyphHeight := 0;
+
+  //The button never grows beyond the glyph: the icon keeps its size even if
+  //the composite is taller. MinHeight stays 0 so a short composite clips
+  //instead of overflowing.
+  FButton.Constraints.MinHeight := 0;
+  FButton.Constraints.MaxHeight := GlyphHeight;
+
+  Extra := AParentInnerHeight - GlyphHeight;
+  if Extra < 0 then
+    Extra := 0;
+  FButton.BorderSpacing.Top := Extra div 2;
+  FButton.BorderSpacing.Bottom := Extra - (Extra div 2);
 end;
 
 procedure TCustomGlyphButtonOptions.Invalidate;
@@ -880,6 +925,7 @@ procedure TCustomButtonedEdit.UpdateSize;
 begin
   FLeftButton.UpdateSize;
   FRightButton.UpdateSize;
+  UpdateVerticalLayout;
 end;
 
 function TCustomButtonedEdit.CurrentRingSize: Integer;
@@ -940,12 +986,59 @@ begin
   Result := FNativeEditHeight;
 end;
 
+function TCustomButtonedEdit.InnerHeight: Integer;
+begin
+  Result := Height - 2 * CurrentRingSize;
+  if Result < 0 then
+    Result := 0;
+end;
+
+procedure TCustomButtonedEdit.UpdateEditBounds;
+var
+  Extra: Integer;
+begin
+  if FEditText = nil then
+    Exit;
+
+  //A small gap between the edit and the frame/buttons on both sides.
+  FEditText.BorderSpacing.Left := CurrentGapSize;
+  FEditText.BorderSpacing.Right := CurrentGapSize;
+
+  //Center the native edit vertically inside the inner area.
+  Extra := InnerHeight - NativeEditHeight;
+  if Extra < 0 then
+    Extra := 0;
+  FEditText.BorderSpacing.Top := Extra div 2;
+  FEditText.BorderSpacing.Bottom := Extra - (Extra div 2);
+end;
+
+procedure TCustomButtonedEdit.UpdateVerticalLayout;
+var
+  InnerH: Integer;
+begin
+  //Reentrancy guard: setting BorderSpacing/Constraints can trigger a layout.
+  if FUpdatingLayout then
+    Exit;
+  FUpdatingLayout := True;
+  try
+    InnerH := InnerHeight;
+    if FLeftButton <> nil then
+      FLeftButton.CenterVertically(InnerH);
+    if FRightButton <> nil then
+      FRightButton.CenterVertically(InnerH);
+    UpdateEditBounds;
+  finally
+    FUpdatingLayout := False;
+  end;
+end;
+
 procedure TCustomButtonedEdit.UpdateSpacing;
 begin
   if FLeftButton <> nil then
     FLeftButton.SetOuterSpacing(CurrentGapSize);
   if FRightButton <> nil then
     FRightButton.SetOuterSpacing(CurrentGapSize);
+  UpdateVerticalLayout;
   InvalidateClientRectCache(True);
   RequestAlign;
   Invalidate;
@@ -982,6 +1075,13 @@ procedure TCustomButtonedEdit.MouseLeave;
 begin
   inherited MouseLeave;
   UpdateHoverState;
+end;
+
+procedure TCustomButtonedEdit.Resize;
+begin
+  inherited Resize;
+  //Keep the edit and the buttons centered when the height changes.
+  UpdateVerticalLayout;
 end;
 
 procedure TCustomButtonedEdit.Paint;
@@ -1046,6 +1146,7 @@ begin
   inherited Create(AOwner);
 
   FAutoSizeHeightIsEditHeight := True;
+  FUpdatingLayout := False;
   FBorderColor := clWindowFrame;
   FFocusColor := clHighlight;
   FHoverColor := clHighlight;

@@ -27,6 +27,7 @@ type
     procedure TestFormImageFromPicture;
     procedure TestFormImageFromDefaults;
     procedure TestFormMessages;
+    procedure TestFormNoModifierAllowsBareKey;
     procedure TestFormTargetHotKeyInit;
     procedure TestTargetHotKeyConfirmUpdates;
     procedure TestTargetHotKeyCancelKeeps;
@@ -276,6 +277,24 @@ begin
 
     Form.MessageNoKey := 'custom no key';
     AssertEquals('Override', 'custom no key', Form.MessageNoKey);
+  finally
+    Form.Free;
+  end;
+end;
+
+procedure TTestShortcutGrabber.TestFormNoModifierAllowsBareKey;
+var
+  Form: TfrmShortcutGrabber;
+begin
+  { With NoModifier a bare key is accepted instead of showing the "no modifier"
+    warning (which would block on MessageDlg). }
+  Form := TfrmShortcutGrabber.Create(nil);
+  try
+    Form.NoModifier := True;
+    Form.hkKeys.Hotkey := ShortCut(VK_F5, []);
+    Form.btnOkClick(Form);
+    AssertEquals('Bare key accepted', Integer(ShortCut(VK_F5, [])),
+      Integer(Form.Hotkey));
   finally
     Form.Free;
   end;

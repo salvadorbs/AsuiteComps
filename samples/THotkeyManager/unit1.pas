@@ -11,32 +11,33 @@ uses
 
 type
 
+  { One demo row: a THotKeyEdit plus its own register/unregister/clear buttons. }
+  TRow = class
+    Edit: THotKeyEdit;
+    BtnRegister: TButton;
+    BtnUnregister: TButton;
+    BtnClear: TButton;
+    Registered: TShortCut;
+  end;
+
   { TForm1 }
 
   TForm1 = class(TForm)
     procedure FormCreate(Sender: TObject);
   private
-    edtGrabber: THotKeyEdit;
-    edtInline: THotKeyEdit;
-    edtInlineNoMod: THotKeyEdit;
-    edtOnlyWithHotkey: THotKeyEdit;
-    edtCustomIcons: THotKeyEdit;
+    FRows: array of TRow;
     lblValue: TLabel;
-    btnSet: TButton;
-    btnClear: TButton;
-    btnRegister: TButton;
-    btnUnregister: TButton;
-    FRegisteredHotkey: TShortCut;
 
-    procedure HotkeyChanged(Sender: TObject);
-    procedure SetClick(Sender: TObject);
-    procedure ClearClick(Sender: TObject);
+    function AddRow(const ACaption: string; AY: Integer): TRow;
+    procedure EditChanged(Sender: TObject);
     procedure RegisterClick(Sender: TObject);
     procedure UnregisterClick(Sender: TObject);
+    procedure ClearClick(Sender: TObject);
     procedure NotifyEvent(Sender: TObject; ShortcutEx: TShortcutEx);
     function ValidateHotkey(AShortcut: TShortCut): Boolean;
+    procedure UpdateRowButtons(ARowIndex: Integer);
   public
-
+    destructor Destroy; override;
   end;
 
 var
@@ -45,27 +46,6 @@ var
 implementation
 
 {$R *.lfm}
-
-{ Builds a description label + a THotKeyEdit in a column. }
-function AddRow(AParent: TWinControl; var AY: Integer;
-  const ACaption: string): THotKeyEdit;
-var
-  Lbl: TLabel;
-begin
-  Lbl := TLabel.Create(AParent);
-  Lbl.Parent := AParent;
-  Lbl.Left := 16;
-  Lbl.Top := AY;
-  Lbl.Caption := ACaption;
-  Inc(AY, 20);
-
-  Result := THotKeyEdit.Create(AParent);
-  Result.Parent := AParent;
-  Result.Left := 16;
-  Result.Top := AY;
-  Result.Width := 220;
-  Inc(AY, 46);
-end;
 
 { Two simple 16x16 colors, used to show custom Choose/Clear icons. }
 function MakeDemoImages(AOwner: TComponent): TImageList;
@@ -91,127 +71,169 @@ end;
 
 { TForm1 }
 
+destructor TForm1.Destroy;
+var
+  Row: TRow;
+begin
+  for Row in FRows do
+    Row.Free;
+  inherited Destroy;
+end;
+
+function TForm1.AddRow(const ACaption: string; AY: Integer): TRow;
+var
+  Lbl: TLabel;
+  Row: TRow;
+begin
+  Lbl := TLabel.Create(Self);
+  Lbl.Parent := Self;
+  Lbl.Left := 16;
+  Lbl.Top := AY;
+  Lbl.Caption := ACaption;
+
+  Row := TRow.Create;
+  Row.Edit := THotKeyEdit.Create(Self);
+  Row.Edit.Parent := Self;
+  Row.Edit.SetBounds(16, AY + 20, 200, 24);
+  Row.Edit.OnHotkeyChange := EditChanged;
+
+  Row.BtnRegister := TButton.Create(Self);
+  Row.BtnRegister.Parent := Self;
+  Row.BtnRegister.SetBounds(232, AY + 20, 84, 24);
+  Row.BtnRegister.Caption := 'Register';
+  Row.BtnRegister.Tag := Length(FRows);
+  Row.BtnRegister.OnClick := RegisterClick;
+
+  Row.BtnUnregister := TButton.Create(Self);
+  Row.BtnUnregister.Parent := Self;
+  Row.BtnUnregister.SetBounds(322, AY + 20, 84, 24);
+  Row.BtnUnregister.Caption := 'Unregister';
+  Row.BtnUnregister.Tag := Length(FRows);
+  Row.BtnUnregister.Enabled := False;
+  Row.BtnUnregister.OnClick := UnregisterClick;
+
+  Row.BtnClear := TButton.Create(Self);
+  Row.BtnClear.Parent := Self;
+  Row.BtnClear.SetBounds(412, AY + 20, 64, 24);
+  Row.BtnClear.Caption := 'Clear';
+  Row.BtnClear.Tag := Length(FRows);
+  Row.BtnClear.OnClick := ClearClick;
+
+  SetLength(FRows, Length(FRows) + 1);
+  FRows[High(FRows)] := Row;
+  Result := Row;
+end;
+
 procedure TForm1.FormCreate(Sender: TObject);
 var
-  Y: Integer;
+  Row: TRow;
   ImgList: TImageList;
+  Y: Integer;
 begin
   Caption := 'THotKeyEdit demo';
-  ClientWidth := 560;
+  ClientWidth := 620;
   ClientHeight := 430;
 
   Y := 12;
 
-  edtGrabber := AddRow(Self, Y, '1. Grabber on click (default)');
-  edtGrabber.Hotkey := ShortCut(VK_F5, [ssCtrl]);
-  edtGrabber.OnValidateHotkey := ValidateHotkey;
-  edtGrabber.OnHotkeyChange := HotkeyChanged;
+  Row := AddRow('1. Grabber on click (default)', Y);
+  Row.Edit.Hotkey := ShortCut(VK_F5, [ssCtrl]);
+  Row.Edit.OnValidateHotkey := ValidateHotkey;
+  Inc(Y, 54);
 
-  edtInline := AddRow(Self, Y, '2. Inline capture (ShowGrabberOnClick = False)');
-  edtInline.ShowGrabberOnClick := False;
-  edtInline.OnHotkeyChange := HotkeyChanged;
+  Row := AddRow('2. Inline capture (ShowGrabberOnClick = False)', Y);
+  Row.Edit.ShowGrabberOnClick := False;
+  Inc(Y, 54);
 
-  edtInlineNoMod := AddRow(Self, Y, '3. Inline + NoModifier (bare key allowed)');
-  edtInlineNoMod.ShowGrabberOnClick := False;
-  edtInlineNoMod.NoModifier := True;
-  edtInlineNoMod.OnHotkeyChange := HotkeyChanged;
+  Row := AddRow('3. Inline + NoModifier (bare key allowed)', Y);
+  Row.Edit.ShowGrabberOnClick := False;
+  Row.Edit.NoModifier := True;
+  Inc(Y, 54);
 
-  edtOnlyWithHotkey := AddRow(Self, Y, '4. ButtonVisibleOnlyWithHotkey = True');
-  edtOnlyWithHotkey.ButtonVisibleOnlyWithHotkey := True;
-  edtOnlyWithHotkey.OnHotkeyChange := HotkeyChanged;
+  Row := AddRow('4. Grabber + NoModifier (bare key allowed)', Y);
+  Row.Edit.NoModifier := True;
+  Inc(Y, 54);
 
-  edtCustomIcons := AddRow(Self, Y, '5. Custom icons (Choose/Clear + ImagesWidth)');
+  Row := AddRow('5. ButtonVisibleOnlyWithHotkey = True', Y);
+  Row.Edit.ButtonVisibleOnlyWithHotkey := True;
+  Inc(Y, 54);
+
+  Row := AddRow('6. Custom icons (Choose/Clear + ImagesWidth)', Y);
   ImgList := MakeDemoImages(Self);
-  edtCustomIcons.UseDefaultImages := False;
-  edtCustomIcons.RightButton.Images := ImgList;
-  edtCustomIcons.RightButton.ImagesWidth := ImgList.Width;
-  edtCustomIcons.ChooseImageIndex := 0;
-  edtCustomIcons.ClearImageIndex := 1;
-  edtCustomIcons.OnHotkeyChange := HotkeyChanged;
+  Row.Edit.UseDefaultImages := False;
+  Row.Edit.RightButton.Images := ImgList;
+  Row.Edit.RightButton.ImagesWidth := ImgList.Width;
+  Row.Edit.ChooseImageIndex := 0;
+  Row.Edit.ClearImageIndex := 1;
+  Inc(Y, 54);
 
   lblValue := TLabel.Create(Self);
   lblValue.Parent := Self;
-  lblValue.Left := 16;
-  lblValue.Top := Y + 4;
+  lblValue.SetBounds(16, Y + 4, 560, 20);
   lblValue.Caption := 'Last change: (none)';
-
-  btnSet := TButton.Create(Self);
-  btnSet.Parent := Self;
-  btnSet.SetBounds(16, Y + 30, 90, 25);
-  btnSet.Caption := 'Set Alt+F6';
-  btnSet.OnClick := SetClick;
-
-  btnClear := TButton.Create(Self);
-  btnClear.Parent := Self;
-  btnClear.SetBounds(112, Y + 30, 90, 25);
-  btnClear.Caption := 'Clear';
-  btnClear.OnClick := ClearClick;
-
-  btnRegister := TButton.Create(Self);
-  btnRegister.Parent := Self;
-  btnRegister.SetBounds(220, Y + 30, 90, 25);
-  btnRegister.Caption := 'Register';
-  btnRegister.OnClick := RegisterClick;
-
-  btnUnregister := TButton.Create(Self);
-  btnUnregister.Parent := Self;
-  btnUnregister.SetBounds(316, Y + 30, 90, 25);
-  btnUnregister.Caption := 'Unregister';
-  btnUnregister.Enabled := False;
-  btnUnregister.OnClick := UnregisterClick;
 end;
 
-procedure TForm1.HotkeyChanged(Sender: TObject);
+procedure TForm1.EditChanged(Sender: TObject);
 begin
   lblValue.Caption := 'Last change: ' + ShortCutToText(THotKeyEdit(Sender).Hotkey);
 end;
 
-procedure TForm1.SetClick(Sender: TObject);
+procedure TForm1.UpdateRowButtons(ARowIndex: Integer);
+var
+  Registered: Boolean;
 begin
-  edtGrabber.Hotkey := ShortCut(VK_F6, [ssAlt]);
-end;
-
-procedure TForm1.ClearClick(Sender: TObject);
-begin
-  edtGrabber.ClearHotkey;
+  Registered := FRows[ARowIndex].Registered <> 0;
+  FRows[ARowIndex].BtnRegister.Enabled := not Registered;
+  FRows[ARowIndex].BtnUnregister.Enabled := Registered;
+  FRows[ARowIndex].BtnClear.Enabled := not Registered;
+  FRows[ARowIndex].Edit.Enabled := not Registered;
 end;
 
 procedure TForm1.RegisterClick(Sender: TObject);
+var
+  Row: TRow;
+  Index: Integer;
 begin
-  if edtGrabber.Hotkey = 0 then
+  Index := TButton(Sender).Tag;
+  Row := FRows[Index];
+
+  if Row.Edit.Hotkey = 0 then
   begin
     ShowMessage('No hotkey selected.');
     Exit;
   end;
 
-  if HotkeyManager.RegisterNotify(edtGrabber.Hotkey, NotifyEvent) then
+  if HotkeyManager.RegisterNotify(Row.Edit.Hotkey, NotifyEvent) then
   begin
-    FRegisteredHotkey := edtGrabber.Hotkey;
-    ShowMessage('Hotkey registered: ' + ShortCutToText(FRegisteredHotkey));
-    btnRegister.Enabled := False;
-    btnUnregister.Enabled := True;
-    edtGrabber.Enabled := False;
-    btnSet.Enabled := False;
-    btnClear.Enabled := False;
+    Row.Registered := Row.Edit.Hotkey;
+    ShowMessage('Hotkey registered: ' + ShortCutToText(Row.Registered));
+    UpdateRowButtons(Index);
   end
   else
     ShowMessage('Cannot register hotkey (needs X11 or a Wayland portal with approval, plus a free shortcut).');
 end;
 
 procedure TForm1.UnregisterClick(Sender: TObject);
+var
+  Row: TRow;
+  Index: Integer;
 begin
-  if HotkeyManager.UnregisterNotify(FRegisteredHotkey) then
+  Index := TButton(Sender).Tag;
+  Row := FRows[Index];
+
+  if HotkeyManager.UnregisterNotify(Row.Registered) then
   begin
-    ShowMessage('Hotkey unregistered: ' + ShortCutToText(FRegisteredHotkey));
-    FRegisteredHotkey := 0;
-    btnRegister.Enabled := True;
-    btnUnregister.Enabled := False;
-    edtGrabber.Enabled := True;
-    btnSet.Enabled := True;
-    btnClear.Enabled := True;
+    ShowMessage('Hotkey unregistered: ' + ShortCutToText(Row.Registered));
+    Row.Registered := 0;
+    UpdateRowButtons(Index);
   end
   else
     ShowMessage('Cannot unregister hotkey.');
+end;
+
+procedure TForm1.ClearClick(Sender: TObject);
+begin
+  FRows[TButton(Sender).Tag].Edit.ClearHotkey;
 end;
 
 procedure TForm1.NotifyEvent(Sender: TObject; ShortcutEx: TShortcutEx);

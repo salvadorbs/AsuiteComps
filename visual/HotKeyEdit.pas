@@ -62,7 +62,6 @@ type
     FCapture: TShortcutCapture;
     FInlineCapture: Boolean;
     FUseDefaultImages: Boolean;
-    FDefaultsWidth: Integer;
 
     function GetHotkey: TShortCut;
     function GetNoModifier: Boolean;
@@ -179,7 +178,6 @@ begin
   FNoModifier := False;
   FInlineCapture := False;
   FUseDefaultImages := True;
-  FDefaultsWidth := 0;
 
   FCapture := TShortcutCapture.Create;
   FCapture.NoModifier := FNoModifier;
@@ -334,19 +332,20 @@ begin
   if FUseDefaultImages and
      ((RightButton.Images = nil) or (RightButton.Images = DefaultHotKeyEditImages)) then
   begin
-    // No host icons: use the embedded defaults.
-    RightButton.Images := GetDefaultHotKeyEditImages;
+    // No host icons: use the embedded defaults. Set the width before the list:
+    // assigning a list clears the "width is explicit" flag, so the default
+    // width is not mistaken for a host-provided one.
     RightButton.ImagesWidth := GetDefaultHotKeyEditImages.Width;
-    FDefaultsWidth := RightButton.ImagesWidth;
+    RightButton.Images := GetDefaultHotKeyEditImages;
     ClearIdx := HOTKEYEDIT_CLEAR_INDEX;
     ChooseIdx := HOTKEYEDIT_CHOOSE_INDEX;
   end
   else
   if RightButton.Images <> nil then
   begin
-    // Host-provided icons take precedence; derive the width from the list when
-    // the current value is still the one used for the embedded defaults.
-    if (RightButton.ImagesWidth = 0) or (RightButton.ImagesWidth = FDefaultsWidth) then
+    // Host-provided icons take precedence. Derive the width from the list only
+    // when the host did not set one explicitly.
+    if not RightButton.ImageWidthExplicit then
       RightButton.ImagesWidth := RightButton.Images.Width;
     ClearIdx := FClearImageIndex;
     ChooseIdx := FChooseImageIndex;
@@ -393,7 +392,7 @@ procedure THotKeyEdit.OpenGrabber;
 var
   NewHotkey: TShortCut;
 begin
-  NewHotkey := TfrmShortcutGrabber.Execute(Self, FHotkey, FOnValidateHotkey);
+  NewHotkey := TfrmShortcutGrabber.Execute(Self, FHotkey, FOnValidateHotkey, FNoModifier);
   if NewHotkey <> 0 then
     SetHotkey(NewHotkey);
 end;

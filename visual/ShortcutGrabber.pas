@@ -165,6 +165,7 @@ type
     FTargetHotKey: THotKey;
     FImages: TShortcutGrabberImages;
     FUpdatingKeys: Boolean;
+    FNoModifier: Boolean;
     FOnValidateHotkey: TShortcutValidateEvent;
     FMessageNoKey: string;
     FMessageNoModifier: string;
@@ -221,6 +222,9 @@ type
     property WinKeyImage: TPicture read GetWinKeyImage;
 
     property OnValidateHotkey: TShortcutValidateEvent read GetValidateHotkey write FOnValidateHotkey;
+    { When True a bare key (no modifier) is accepted instead of requiring at
+      least one modifier. }
+    property NoModifier: Boolean read FNoModifier write FNoModifier default False;
     property MessageNoKey: string read GetMessageNoKey write FMessageNoKey;
     property MessageNoModifier: string read GetMessageNoModifier write FMessageNoModifier;
     property MessageNotAvailable: string read GetMessageNotAvailable write FMessageNotAvailable;
@@ -243,16 +247,19 @@ type
       dialog is cancelled (AHotkey is left as AInitialHotkey). }
     class function TryExecute(AOwner: TComponent; AInitialHotkey: TShortCut;
       out AHotkey: TShortCut;
-      AValidate: TShortcutValidateEvent = nil): Boolean; overload;
+      AValidate: TShortcutValidateEvent = nil;
+      ANoModifier: Boolean = False): Boolean; overload;
 
     { Standalone entry point: shows the dialog starting from AHotkey and returns
       the chosen shortcut (0 when cancelled). }
     class function Execute(AOwner: TComponent; AHotkey: TShortCut;
-      AValidate: TShortcutValidateEvent = nil): TShortCut; overload;
+      AValidate: TShortcutValidateEvent = nil;
+      ANoModifier: Boolean = False): TShortCut; overload;
 
     { String-based overload kept for backward compatibility with ASuite. }
     class function Execute(AOwner: TComponent; const AHotkey: string;
-      AValidate: TShortcutValidateEvent = nil): string; overload;
+      AValidate: TShortcutValidateEvent = nil;
+      ANoModifier: Boolean = False): string; overload;
   end;
 
 var
@@ -368,6 +375,7 @@ constructor TfrmShortcutGrabber.Create(AOwner: TComponent);
 begin
   FImages := TShortcutGrabberImages.Create;
   FImages.OnChange := ImagesChanged;
+  FNoModifier := False;
   inherited Create(AOwner);
 end;
 
@@ -429,7 +437,7 @@ begin
     Exit;
   end;
 
-  if Modifiers = [] then
+  if (Modifiers = []) and (not FNoModifier) then
   begin
     MessageDlg(MessageNoModifier, mtWarning, [mbOK], 0);
     hkKeys.SetFocus;
@@ -724,7 +732,7 @@ end;
 
 class function TfrmShortcutGrabber.TryExecute(AOwner: TComponent;
   AInitialHotkey: TShortCut; out AHotkey: TShortCut;
-  AValidate: TShortcutValidateEvent): Boolean;
+  AValidate: TShortcutValidateEvent; ANoModifier: Boolean): Boolean;
 var
   Form: TfrmShortcutGrabber;
 begin
@@ -736,6 +744,7 @@ begin
     if Assigned(AValidate) then
       Form.OnValidateHotkey := AValidate;
 
+    Form.NoModifier := ANoModifier;
     Form.Hotkey := AInitialHotkey;
 
     if Form.ShowModal = mrOk then
@@ -749,23 +758,24 @@ begin
 end;
 
 class function TfrmShortcutGrabber.Execute(AOwner: TComponent; AHotkey: TShortCut;
-  AValidate: TShortcutValidateEvent): TShortCut;
+  AValidate: TShortcutValidateEvent; ANoModifier: Boolean): TShortCut;
 var
   Chosen: TShortCut;
 begin
-  if TfrmShortcutGrabber.TryExecute(AOwner, AHotkey, Chosen, AValidate) then
+  if TfrmShortcutGrabber.TryExecute(AOwner, AHotkey, Chosen, AValidate, ANoModifier) then
     Result := Chosen
   else
     Result := 0;
 end;
 
 class function TfrmShortcutGrabber.Execute(AOwner: TComponent;
-  const AHotkey: string; AValidate: TShortcutValidateEvent): string;
+  const AHotkey: string; AValidate: TShortcutValidateEvent;
+  ANoModifier: Boolean): string;
 var
   Shortcut: TShortCut;
 begin
   Shortcut := TextToShortCut(AHotkey);
-  Shortcut := TfrmShortcutGrabber.Execute(AOwner, Shortcut, AValidate);
+  Shortcut := TfrmShortcutGrabber.Execute(AOwner, Shortcut, AValidate, ANoModifier);
 
   if Shortcut = 0 then
     Result := ''

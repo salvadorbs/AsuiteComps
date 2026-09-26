@@ -38,6 +38,7 @@ type
     procedure TestInlineCaptureKeepsProgrammaticHotkey;
     procedure TestInlineCaptureValidator;
     procedure TestCustomImagesDeriveWidth;
+    procedure TestExplicitImagesWidthPreserved;
   end;
 
 implementation
@@ -392,6 +393,30 @@ begin
     E.RightButton.Images := List;
     E.ChooseImageIndex := 0; // triggers UpdateButton
     AssertEquals('Derived width from host list', 24, E.RightButton.ImagesWidth);
+  finally
+    E.Free;
+    List.Free;
+  end;
+end;
+
+procedure TTestHotKeyEdit.TestExplicitImagesWidthPreserved;
+var
+  E: THotKeyEdit;
+  List: TImageList;
+begin
+  { Regression: an explicit ImagesWidth equal to the embedded default (16) was
+    mistaken for "still the default" and overridden with the host list width
+    (e.g. 32 from ilIcons), so the glyph looked resized/clipped. }
+  E := THotKeyEdit.Create(nil);
+  List := TImageList.Create(nil);
+  try
+    List.Width := 24;
+    List.Height := 24;
+    E.UseDefaultImages := False;
+    E.RightButton.Images := List;
+    E.RightButton.ImagesWidth := 16; // explicit, same as the embedded default
+    E.ChooseImageIndex := 0;         // triggers UpdateButton
+    AssertEquals('Explicit width preserved', 16, E.RightButton.ImagesWidth);
   finally
     E.Free;
     List.Free;

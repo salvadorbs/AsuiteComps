@@ -163,7 +163,7 @@ jobs:
       if: always()
       uses: actions/upload-artifact@v4.6.2
       with:
-        name: samples-${{ matrix.config.build-widgetset }}
+        name: samples-${{ runner.os }}-${{ matrix.config.build-widgetset }}
         if-no-files-found: warn
         path: |
           ${{ env.COMPS_SOURCE }}/samples/TButtonedEdit/TButtonedEdit.exe

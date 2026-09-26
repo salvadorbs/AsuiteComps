@@ -6,7 +6,7 @@ interface
 
 uses
   fpcunit, testregistry, Classes, SysUtils, Types, LCLType, Controls, Forms,
-  StdCtrls, Graphics, Menus, ButtonedEdit;
+  StdCtrls, Graphics, Menus, ImgList, ButtonedEdit;
 
 type
 
@@ -73,6 +73,9 @@ type
     procedure TestTabStopProxy;
     procedure TestFontPropagatesToInnerEdit;
     procedure TestButtonOptionsClearWithNil;
+    procedure TestInnerEditHasHorizontalGap;
+    procedure TestInnerEditVerticalCentering;
+    procedure TestGlyphButtonFixedGlyphSize;
   end;
 
 implementation
@@ -755,6 +758,94 @@ begin
     AssertEquals('ImageIndex cleared', -1, E.LeftButton.ImageIndex);
     AssertNull('DropDownMenu cleared', E.LeftButton.DropDownMenu);
   finally
+    E.Free;
+  end;
+end;
+
+procedure TTestButtonedEdit.TestInnerEditHasHorizontalGap;
+var
+  E: TButtonedEdit;
+  Ed: TEdit;
+begin
+  { The inner edit is inset on both sides so its text does not stick to the
+    simulated frame / glyph buttons. }
+  E := TButtonedEdit.Create(nil);
+  try
+    Ed := FindInnerEdit(E);
+    AssertNotNull('Inner edit found', Ed);
+    AssertTrue('Left gap reserved', Ed.BorderSpacing.Left > 0);
+    AssertTrue('Right gap reserved', Ed.BorderSpacing.Right > 0);
+  finally
+    E.Free;
+  end;
+end;
+
+procedure TTestButtonedEdit.TestInnerEditVerticalCentering;
+var
+  E: TButtonedEdit;
+  Ed: TEdit;
+  Before, After: Integer;
+begin
+  { The inner edit is centered vertically: a taller composite turns into equal
+    top/bottom padding instead of a stretched edit. }
+  E := TButtonedEdit.Create(nil);
+  try
+    Ed := FindInnerEdit(E);
+    AssertNotNull('Inner edit found', Ed);
+
+    { Grow well past the native edit height first, so the extra space is not
+      clamped to zero in a headless environment. }
+    E.Height := E.Height + 60;
+    Before := Ed.BorderSpacing.Top + Ed.BorderSpacing.Bottom;
+
+    E.Height := E.Height + 30;
+    After := Ed.BorderSpacing.Top + Ed.BorderSpacing.Bottom;
+    AssertEquals('Extra height becomes padding', Before + 30, After);
+    AssertTrue('Top padding positive', Ed.BorderSpacing.Top > 0);
+    AssertTrue('Roughly centered',
+      Abs(Ed.BorderSpacing.Top - Ed.BorderSpacing.Bottom) <= 1);
+  finally
+    E.Free;
+  end;
+end;
+
+procedure TTestButtonedEdit.TestGlyphButtonFixedGlyphSize;
+var
+  E: TButtonedEdit;
+  List: TImageList;
+  Btn: TCustomGlyphButton;
+  I: Integer;
+begin
+  { The glyph button height is pinned to the glyph size so a taller component
+    never stretches the icon. }
+  E := TButtonedEdit.Create(nil);
+  List := TImageList.Create(nil);
+  try
+    List.Width := 16;
+    List.Height := 16;
+    E.RightButton.Images := List;
+    E.RightButton.ImagesWidth := 16;
+    E.RightButton.ImageIndex := 0;
+
+    Btn := nil;
+    for I := 0 to E.ControlCount - 1 do
+      if (E.Controls[I] is TCustomGlyphButton) and
+         (E.Controls[I].Name = 'RightButton') then
+        Btn := TCustomGlyphButton(E.Controls[I]);
+    AssertNotNull('Right button found', Btn);
+
+    AssertEquals('Min height not forced', 0, Btn.Constraints.MinHeight);
+    AssertEquals('Max height pinned to glyph', 16, Btn.Constraints.MaxHeight);
+    AssertTrue('Button vertically centered',
+      Btn.BorderSpacing.Top >= 0);
+    AssertTrue('Button vertically centered (bottom)',
+      Btn.BorderSpacing.Bottom >= 0);
+
+    E.Height := E.Height + 40;
+    AssertEquals('Glyph size independent of component height',
+      16, Btn.Constraints.MaxHeight);
+  finally
+    List.Free;
     E.Free;
   end;
 end;
