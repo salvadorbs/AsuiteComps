@@ -175,7 +175,10 @@ end;
 
 procedure TForm1.EditChanged(Sender: TObject);
 begin
-  lblValue.Caption := 'Last change: ' + ShortCutToText(THotKeyEdit(Sender).Hotkey);
+  // The initial Hotkey values are set in FormCreate before lblValue exists, so
+  // the change event can fire while lblValue is still nil.
+  if Assigned(lblValue) then
+    lblValue.Caption := 'Last change: ' + ShortCutToText(THotKeyEdit(Sender).Hotkey);
 end;
 
 procedure TForm1.UpdateRowButtons(ARowIndex: Integer);

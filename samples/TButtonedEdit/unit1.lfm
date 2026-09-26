@@ -1,11 +1,12 @@
 object Form1: TForm1
   Left = 1921
-  Height = 240
+  Height = 280
   Top = 644
-  Width = 320
-  Caption = 'Form1'
-  ClientHeight = 240
-  ClientWidth = 320
+  Width = 480
+  Caption = 'TButtonedEdit demo'
+  ClientHeight = 280
+  ClientWidth = 480
+  OnCreate = FormCreate
   object ButtonedEdit1: TButtonedEdit
     Left = 48
     Height = 24
