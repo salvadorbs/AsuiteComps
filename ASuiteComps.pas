@@ -10,7 +10,8 @@ interface
 uses
   BCImageTab, ButtonedEdit, HotKey, Hotkeys.ShortcutEx, Hotkeys.Manager, 
   Hotkeys.Manager.Platform, Hotkeys.Manager.Portal, ShortcutGrabber, 
-  HotKeyEdit, LazarusPackageIntf;
+  HotKeyEdit, SystemIcons.Ext, SystemIcons.Mime,
+  SystemIcons.Platform, LazarusPackageIntf;
 
 implementation
 

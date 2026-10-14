@@ -35,7 +35,7 @@
         <PackageName Value="LCL"/>
       </Item2>
     </RequiredPackages>
-    <Units Count="10">
+    <Units Count="13">
       <Unit0>
         <Filename Value="AsuiteCompsTests.lpr"/>
         <IsPartOfProject Value="True"/>
@@ -85,6 +85,21 @@
         <IsPartOfProject Value="True"/>
         <UnitName Value="Tests.HotKeyEdit"/>
       </Unit9>
+      <Unit10>
+        <Filename Value="Tests.SystemIconsExt.pas"/>
+        <IsPartOfProject Value="True"/>
+        <UnitName Value="Tests.SystemIconsExt"/>
+      </Unit10>
+      <Unit11>
+        <Filename Value="Tests.SystemIconsMime.pas"/>
+        <IsPartOfProject Value="True"/>
+        <UnitName Value="Tests.SystemIconsMime"/>
+      </Unit11>
+      <Unit12>
+        <Filename Value="Tests.SystemIconsPlatform.pas"/>
+        <IsPartOfProject Value="True"/>
+        <UnitName Value="Tests.SystemIconsPlatform"/>
+      </Unit12>
     </Units>
   </ProjectOptions>
   <CompilerOptions>

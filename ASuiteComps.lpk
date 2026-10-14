@@ -13,7 +13,7 @@
       </SearchPaths>
     </CompilerOptions>
     <Version Major="1"/>
-    <Files Count="10">
+    <Files Count="14">
       <Item1>
         <Filename Value="visual\BCImageTab.pas"/>
         <HasRegisterProc Value="True"/>
@@ -62,6 +62,23 @@
         <HasRegisterProc Value="True"/>
         <UnitName Value="HotKeyEdit"/>
       </Item10>
+      <Item11>
+        <Filename Value="library\SystemIcons.Ext.pas"/>
+        <UnitName Value="SystemIcons.Ext"/>
+      </Item11>
+      <Item12>
+        <Filename Value="library\SystemIcons.Mime.pas"/>
+        <UnitName Value="SystemIcons.Mime"/>
+      </Item12>
+      <Item13>
+        <Filename Value="library\platform\win\SystemIcons.Platform.pas"/>
+        <AddToUsesPkgSection Value="False"/>
+        <UnitName Value="SystemIcons.Platform"/>
+      </Item13>
+      <Item14>
+        <Filename Value="library\platform\unix\SystemIcons.Platform.pas"/>
+        <UnitName Value="SystemIcons.Platform"/>
+      </Item14>
     </Files>
     <RequiredPkgs Count="2">
       <Item1>
