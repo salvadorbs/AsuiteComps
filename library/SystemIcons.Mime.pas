@@ -198,7 +198,7 @@ var
 begin
   Result := '';
   names := GetIconNames(AExtension);
-  if Assigned(names) and Assigned(@AIsAvailable) then
+  if Assigned(names) and Assigned(AIsAvailable) then
   begin
     for I := 0 to names.Count - 1 do
     begin

@@ -30,6 +30,7 @@ type
     procedure TestIgnoreNoise;
     procedure TestCaseInsensitive;
     procedure TestChooseBest;
+    procedure TestNilCallbackReturnsFallback;
     procedure TestMissingExt;
   end;
 
@@ -140,6 +141,15 @@ begin
   FAvail.Available.Add('text-x-generic');
   s := FProvider.ChooseBestIcon('*.txt', @FAvail.IsAvailable, 'fallback');
   AssertEquals('text-plain', s);
+end;
+
+procedure TTestSystemIconsMime.TestNilCallbackReturnsFallback;
+var
+  noCallback: TIconAvailableFunc = nil;
+begin
+  LoadSample;
+  AssertEquals('fallback',
+    FProvider.ChooseBestIcon('*.txt', noCallback, 'fallback'));
 end;
 
 procedure TTestSystemIconsMime.TestMissingExt;
