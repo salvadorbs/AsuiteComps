@@ -51,12 +51,11 @@ type
 implementation
 
 uses
-  Windows, ShellApi, BGRAIconCursor, BGRABitmapTypes, LazFileUtils;
+  ShellApi, Graphics, BGRAIconCursor, BGRABitmapTypes;
 
 const
   ICON_SIZE_SMALL = 16;
   ICON_SIZE_LARGE = 32;
-  ICO_BITDEPTH = 32;
 
 { TSystemIconHelper }
 

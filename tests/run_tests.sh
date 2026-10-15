@@ -64,4 +64,11 @@ else
   echo "WARNING: could not parse the number of run tests" >&2
 fi
 
+# The runner links heaptrc: fail on any unfreed memory blocks.
+if printf '%s\n' "$OUTPUT" | grep -Eq '[1-9][0-9]* unfreed memory blocks'; then
+  echo "ERROR: memory leaks detected (see 'unfreed memory blocks' above)" >&2
+  exit 1
+fi
+echo "=== No memory leaks detected ==="
+
 exit $STATUS

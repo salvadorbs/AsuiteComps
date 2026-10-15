@@ -16,8 +16,8 @@ uses
   {$ENDIF}
   ;
 
-type
 {$IFDEF UNIX}
+type
   TTestSystemIconsPlatform = class(TTestCase)
   private
     FProvider: TMimeIconProvider;
@@ -33,6 +33,8 @@ type
     procedure TestMapDesktopFile;
     procedure TestMapDirectory;
     procedure TestThemeEmptyIsFalse;
+    procedure TestLoadMissingFilesIsEmpty;
+    procedure TestLoadSystemTable;
   end;
 {$ENDIF}
 
@@ -125,6 +127,35 @@ end;
 procedure TTestSystemIconsPlatform.TestThemeEmptyIsFalse;
 begin
   AssertFalse(TSystemIconHelper.ThemeIconExists(''));
+end;
+
+procedure TTestSystemIconsPlatform.TestLoadMissingFilesIsEmpty;
+var
+  P: TMimeIconProvider;
+begin
+  P := TMimeIconProvider.Create;
+  try
+    P.LoadFromFiles('/nonexistent-globs', '');
+    AssertEquals(0, P.Count);
+  finally
+    P.Free;
+  end;
+end;
+
+procedure TTestSystemIconsPlatform.TestLoadSystemTable;
+var
+  P: TMimeIconProvider;
+begin
+  // Only meaningful where shared-mime-info is installed; skip elsewhere
+  if not FileExists('/usr/share/mime/globs') then
+    Exit;
+  P := TMimeIconProvider.Create;
+  try
+    P.LoadSystemTable;
+    AssertTrue(P.Count > 0);
+  finally
+    P.Free;
+  end;
 end;
 
 initialization

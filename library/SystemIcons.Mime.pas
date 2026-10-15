@@ -44,6 +44,9 @@ type
     procedure Clear;
     procedure LoadFromStrings(const AGlobs, AGenericIcons: TStrings);
     procedure LoadFromFiles(const AGlobsFile, AGenericIconsFile: string);
+    { Loads the freedesktop shared-mime-info database from its well-known
+      location. Missing files are silently ignored (empty table). }
+    procedure LoadSystemTable;
     function GetIconNames(const AExtension: string): TStringList;
     function ChooseBestIcon(const AExtension: string; AIsAvailable: TIconAvailableFunc;
       const AFallback: string = ''): string;
@@ -171,6 +174,14 @@ begin
     globs.Free;
     generics.Free;
   end;
+end;
+
+procedure TMimeIconProvider.LoadSystemTable;
+const
+  MIME_GLOBS = '/usr/share/mime/globs';
+  MIME_GENERIC_ICONS = '/usr/share/mime/generic-icons';
+begin
+  LoadFromFiles(MIME_GLOBS, MIME_GENERIC_ICONS);
 end;
 
 function TMimeIconProvider.GetIconNames(const AExtension: string): TStringList;

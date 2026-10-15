@@ -36,17 +36,13 @@ type
 
 implementation
 
-var
-  LCLInitialized: Boolean = False;
+uses
+  Tests.Setup;
 
 procedure TTestShortcutGrabber.SetUp;
 begin
   inherited SetUp;
-  if not LCLInitialized then
-  begin
-    Application.Initialize;
-    LCLInitialized := True;
-  end;
+  EnsureLCLInitialized;
 
   { Isolate tests from process-wide defaults }
   ShortcutGrabberDefaults.Images.Clear;

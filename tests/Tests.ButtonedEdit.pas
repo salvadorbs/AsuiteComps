@@ -80,8 +80,8 @@ type
 
 implementation
 
-var
-  LCLInitialized: Boolean = False;
+uses
+  Tests.Setup;
 
 procedure TTestButtonedEdit.OnChange(Sender: TObject);
 begin
@@ -173,11 +173,7 @@ end;
 procedure TTestButtonedEdit.SetUp;
 begin
   inherited SetUp;
-  if not LCLInitialized then
-  begin
-    Application.Initialize;
-    LCLInitialized := True;
-  end;
+  EnsureLCLInitialized;
   FChangeCount := 0;
   FClickCount := 0;
   FLeftCount := 0;

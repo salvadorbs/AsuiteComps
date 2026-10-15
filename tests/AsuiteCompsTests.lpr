@@ -11,6 +11,7 @@ program AsuiteCompsTests;
 {$mode objfpc}{$H+}
 
 uses
+  heaptrc,
   {$IFDEF UNIX}
   cthreads,
   {$ENDIF}

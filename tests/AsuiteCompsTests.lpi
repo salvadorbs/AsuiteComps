@@ -35,7 +35,7 @@
         <PackageName Value="LCL"/>
       </Item2>
     </RequiredPackages>
-    <Units Count="13">
+    <Units Count="14">
       <Unit0>
         <Filename Value="AsuiteCompsTests.lpr"/>
         <IsPartOfProject Value="True"/>
@@ -100,6 +100,11 @@
         <IsPartOfProject Value="True"/>
         <UnitName Value="Tests.SystemIconsPlatform"/>
       </Unit12>
+      <Unit13>
+        <Filename Value="Tests.Setup.pas"/>
+        <IsPartOfProject Value="True"/>
+        <UnitName Value="Tests.Setup"/>
+      </Unit13>
     </Units>
   </ProjectOptions>
   <CompilerOptions>

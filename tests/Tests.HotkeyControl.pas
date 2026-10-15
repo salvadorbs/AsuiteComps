@@ -48,8 +48,8 @@ type
 
 implementation
 
-var
-  LCLInitialized: Boolean = False;
+uses
+  Tests.Setup;
 
 { THotKeyCracker }
 
@@ -73,11 +73,7 @@ end;
 procedure TTestHotkeyControl.SetUp;
 begin
   inherited SetUp;
-  if not LCLInitialized then
-  begin
-    Application.Initialize;
-    LCLInitialized := True;
-  end;
+  EnsureLCLInitialized;
   FChanged := 0;
 end;
 

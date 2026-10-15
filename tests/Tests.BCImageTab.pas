@@ -34,8 +34,8 @@ type
 
 implementation
 
-var
-  LCLInitialized: Boolean = False;
+uses
+  Tests.Setup;
 
 { TBCImageTabCracker }
 
@@ -47,11 +47,7 @@ end;
 procedure TTestBCImageTab.SetUp;
 begin
   inherited SetUp;
-  if not LCLInitialized then
-  begin
-    Application.Initialize;
-    LCLInitialized := True;
-  end;
+  EnsureLCLInitialized;
 end;
 
 procedure TTestBCImageTab.TestDefaults;
